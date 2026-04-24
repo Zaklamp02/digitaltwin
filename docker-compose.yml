@@ -1,0 +1,45 @@
+# Ask my agent — NAS deploy.
+#
+# `docker compose up --build -d` and browse to http://<host>:5173.
+# Expose via Cloudflare Tunnel when ready (not wired here per PRD §3).
+
+services:
+  backend:
+    build:
+      context: ./backend
+    env_file: .env
+    environment:
+      # Container-local paths (overriding .env defaults).
+      MEMORY_DIR: /app/memory
+      CHROMA_DIR: /app/chroma_db
+      CREDENTIALS_FILE: /app/credentials.yaml
+      LOG_FILE: /app/logs/requests.ndjson
+      KNOWLEDGE_DB: /app/data/knowledge.db
+      # Widen CORS for the proxied frontend container + local browsing.
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:4173"
+    volumes:
+      - ./memory:/app/memory
+      - ./chroma_db:/app/chroma_db
+      - ./credentials.yaml:/app/credentials.yaml
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./frontend/public:/app/public:ro
+    # Allow the backend container to reach Ollama running on the host Mac/NAS.
+    # No effect when LLM_PROVIDER != ollama.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    restart: unless-stopped

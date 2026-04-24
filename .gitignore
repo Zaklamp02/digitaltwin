@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Env & secrets
+.env
+credentials.yaml
+tokens.txt
+
+# CF Tunnel credentials (never commit)
+.cloudflared/
+
+# Personal data — never committed
+memory/
+data/
+memory_backup_*.zip
+
+# Build artefacts
+*.tsbuildinfo
+
+# Runtime data
+chroma_db/
+logs/
+*.ndjson
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Frontend build artifacts (tsc transpiles .tsx → .js)
+frontend/src/**/*.js
+frontend/*.mjs
+
+# Raw input source materials (archived, content already in knowledge.db)
+raw_input_for_mempalace/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/

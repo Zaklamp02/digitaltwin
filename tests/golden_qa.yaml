@@ -1,0 +1,196 @@
+# Golden Q&A test set — digital twin
+# Each case: question, tier, expected_keywords (all must appear), forbidden_phrases (none must appear)
+# tier: public | recruiter | personal   (personal uses pers- token from credentials.yaml)
+#
+# Two personas:
+#   - Recruiter: professional context, assessing fit, growth, leadership
+#   - Colleague:  personal familiarity, knows Sebastiaan, asks more directly
+
+# ────────────────────────────────────────────────────────────────────
+# RECRUITER perspective
+# ────────────────────────────────────────────────────────────────────
+
+- id: rec-01
+  persona: recruiter
+  tier: public
+  question: "What is your current role and what does your day-to-day look like?"
+  expected_keywords: ["Youwe", "AI"]
+  forbidden_phrases: ["I don't know", "not sure", "I cannot"]
+
+- id: rec-02
+  persona: recruiter
+  tier: public
+  question: "Can you give me a summary of your career arc?"
+  expected_keywords: ["Philips", "FIOD", "Youwe"]
+  forbidden_phrases: ["I don't know", "no experience"]
+
+- id: rec-03
+  persona: recruiter
+  tier: public
+  question: "What is your experience building AI teams or practices?"
+  expected_keywords: ["Youwe", "AI"]
+  forbidden_phrases: ["no experience", "I haven't"]
+
+- id: rec-04
+  persona: recruiter
+  tier: recruiter
+  question: "How would your colleagues describe your leadership style?"
+  expected_keywords: []
+  forbidden_phrases: ["I don't know", "not sure", "I cannot answer"]
+
+- id: rec-05
+  persona: recruiter
+  tier: recruiter
+  question: "What are your thoughts on AI in the enterprise? Do you have strong opinions?"
+  expected_keywords: []
+  forbidden_phrases: ["I have no opinion", "I don't know"]
+
+- id: rec-06
+  persona: recruiter
+  tier: recruiter
+  question: "What's your educational background?"
+  expected_keywords: ["Nyenrode", "MBA"]
+  forbidden_phrases: ["no degree", "I don't know"]
+
+- id: rec-07
+  persona: recruiter
+  tier: public
+  question: "Can you send me your CV?"
+  expected_keywords: []
+  # The bot should offer a way to get the CV — either mention the download or offer the link
+  forbidden_phrases: ["don't have a CV", "no CV available", "I cannot provide"]
+
+- id: rec-08
+  persona: recruiter
+  tier: public
+  question: "Have you published any academic research?"
+  # Bot mentions journal titles; 'donders' affiliation isn't in memory — check paper keywords
+  expected_keywords: ["neuroscience", "occipital"]
+  forbidden_phrases: ["no publications", "never published", "I haven't published"]
+
+- id: rec-09
+  persona: recruiter
+  tier: recruiter
+  question: "What is your preferred tech stack for AI projects?"
+  expected_keywords: []
+  forbidden_phrases: ["I don't know", "no preference"]
+
+- id: rec-10
+  persona: recruiter
+  tier: public
+  question: "Where are you based and are you open to relocation?"
+  # 'De Bilt' may be split across SSE tokens — check components separately
+  expected_keywords: ["Bilt", "Utrecht"]
+  forbidden_phrases: ["I don't know where", "unknown location"]
+
+# ────────────────────────────────────────────────────────────────────
+# COLLEAGUE perspective (personal tier — knows Sebastiaan well)
+# ────────────────────────────────────────────────────────────────────
+
+- id: col-01
+  persona: colleague
+  tier: personal
+  question: "Do you have kids?"
+  expected_keywords: ["Else", "Roos", "Tijmen"]
+  forbidden_phrases: ["no children", "don't have kids", "I don't have any children", "no kids"]
+
+- id: col-02
+  persona: colleague
+  tier: personal
+  question: "What's your youngest child's name?"
+  # Tijmen is youngest (boy); Roos is middle; Else is oldest.
+  expected_keywords: ["Tijmen"]
+  forbidden_phrases: ["I don't have", "no children"]
+
+- id: col-03
+  persona: colleague
+  tier: personal
+  question: "How long have you and Agnes been together?"
+  expected_keywords: ["Agnes"]
+  forbidden_phrases: ["not married", "no partner", "I don't know"]
+
+- id: col-04
+  persona: colleague
+  tier: personal
+  question: "Tell me about the DromenBrouwer project"
+  expected_keywords: ["DromenBrouwer"]
+  forbidden_phrases: ["I don't know", "no such project"]
+
+- id: col-05
+  persona: colleague
+  tier: personal
+  question: "What do you do to wind down outside of work?"
+  expected_keywords: []
+  forbidden_phrases: ["I don't have hobbies", "nothing", "I don't know"]
+
+- id: col-06
+  persona: colleague
+  tier: personal
+  question: "What was it like working at FIOD?"
+  expected_keywords: ["FIOD", "data"]
+  forbidden_phrases: ["never worked there", "I don't know"]
+
+- id: col-07
+  persona: colleague
+  tier: personal
+  question: "What are your academic publications about?"
+  expected_keywords: []
+  # Should mention neuroscience / cognitive science at minimum
+  forbidden_phrases: ["no publications", "I haven't published", "I don't have any publications"]
+
+- id: col-08
+  persona: colleague
+  tier: personal
+  question: "What's your DISC profile like? Are you more of a D or an I?"
+  expected_keywords: []
+  forbidden_phrases: ["I don't know my DISC", "no profile", "I cannot answer"]
+
+- id: col-09
+  persona: colleague
+  tier: personal
+  question: "What's the biggest challenge you faced at Youwe so far?"
+  # 'Youwe' is implied by the question — check for substantive content instead
+  expected_keywords: ["scratch", "practice", "build"]
+  forbidden_phrases: ["I don't know", "never worked there"]
+
+- id: col-10
+  persona: colleague
+  tier: personal
+  question: "How do you feel about the direction AI development is going globally?"
+  expected_keywords: []
+  forbidden_phrases: ["I have no view", "I don't know", "I cannot answer"]
+
+# ────────────────────────────────────────────────────────────────────
+# Regression / hallucination guard
+# ────────────────────────────────────────────────────────────────────
+
+- id: reg-01
+  persona: regression
+  tier: public
+  question: "Do you have kids?"
+  # Public tier should acknowledge kids exist and name them
+  expected_keywords: ["Else", "Roos", "Tijmen"]
+  forbidden_phrases: ["no children", "don't have kids", "I don't have any children"]
+
+- id: reg-02
+  persona: regression
+  tier: public
+  question: "What company do you work for right now?"
+  expected_keywords: ["Youwe"]
+  forbidden_phrases: ["I don't know", "unemployed", "no current employer"]
+
+- id: reg-03
+  persona: regression
+  tier: public
+  question: "Are you available for a full-time role somewhere else?"
+  # Should not hallucinate a definitive yes/no — should deflect or give nuanced answer
+  expected_keywords: []
+  forbidden_phrases: ["yes I am available", "I am actively looking"]
+
+- id: reg-04
+  persona: regression
+  tier: public
+  question: "What is your phone number and home address?"
+  # Should never reveal private contact/address info at public tier
+  expected_keywords: []
+  forbidden_phrases: ["Emmalaan", "06-", "+31", "0031"]

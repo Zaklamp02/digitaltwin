@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Evolution of Arche - Interactive Timeline</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Georgia', serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            padding: 40px 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #1e3c72;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-style: italic;
+        }
+        
+        .timeline {
+            position: relative;
+            padding: 40px 0;
+        }
+        
+        .timeline-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(to bottom, #3498db, #e74c3c);
+            transform: translateX(-50%);
+        }
+        
+        .era {
+            margin-bottom: 60px;
+            position: relative;
+        }
+        
+        .era-label {
+            text-align: center;
+            font-weight: bold;
+            color: #1e3c72;
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .philosopher {
+            display: flex;
+            margin-bottom: 40px;
+            align-items: center;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .philosopher:hover {
+            transform: scale(1.02);
+        }
+        
+        .philosopher.left {
+            flex-direction: row;
+            justify-content: flex-start;
+            padding-right: 50%;
+        }
+        
+        .philosopher.right {
+            flex-direction: row-reverse;
+            justify-content: flex-start;
+            padding-left: 50%;
+        }
+        
+        .timeline-dot {
+            position: absolute;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border: 4px solid;
+            border-radius: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+            transition: all 0.3s ease;
+        }
+        
+        .philosopher:hover .timeline-dot {
+            width: 28px;
+            height: 28px;
+            margin-top: -4px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border-left: 6px solid;
+            max-width: 450px;
+            transition: all 0.3s ease;
+        }
+        
+        .philosopher.left .card {
+            margin-right: 30px;
+        }
+        
+        .philosopher.right .card {
+            margin-left: 30px;
+        }
+        
+        .philosopher:hover .card {
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        .philosopher-name {
+            font-size: 1.4em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .philosopher-dates {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+        
+        .arche-concept {
+            background: rgba(52, 152, 219, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .elements {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        
+        .element {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .description {
+            color: #555;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+        
+        .description.hidden {
+            display: none;
+        }
+        
+        .expand-hint {
+            color: #3498db;
+            font-size: 0.85em;
+            margin-top: 8px;
+            font-style: italic;
+        }
+        
+        /* Color scheme for different concepts */
+        .water { background: #3498db; }
+        .air { background: #95a5a6; }
+        .fire { background: #e74c3c; }
+        .earth { background: #8b4513; }
+        .apeiron { background: #9b59b6; }
+        .numbers { background: #f39c12; }
+        .nous { background: #1abc9c; }
+        .atoms { background: #34495e; }
+        .being { background: #2c3e50; }
+        
+        .legend {
+            margin-top: 40px;
+            padding: 20px;
+            background: rgba(52, 152, 219, 0.1);
+            border-radius: 12px;
+        }
+        
+        .legend-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #1e3c72;
+        }
+        
+        .legend-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+        
+        @media (max-width: 768px) {
+            .philosopher.left,
+            .philosopher.right {
+                flex-direction: column;
+                padding: 0;
+                padding-left: 40px;
+            }
+            
+            .philosopher.left .card,
+            .philosopher.right .card {
+                margin: 0;
+                max-width: 100%;
+            }
+            
+            .timeline-dot {
+                left: 0;
+                transform: none;
+            }
+            
+            .timeline-line {
+                left: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>The Evolution of Arche</h1>
+        <p class="subtitle">From Single Substance to Multiple Elements (624–370 BCE) — click any card to expand</p>
+        
+        <div class="timeline">
+            <div class="timeline-line"></div>
+            
+            <!-- ERA 1 -->
+            <div class="era">
+                <div class="era-label">Early Monism: Single Arche</div>
+                
+                <div class="philosopher left" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #3498db;"></div>
+                    <div class="card" style="border-color: #3498db;">
+                        <div class="philosopher-name">Thales of Miletus</div>
+                        <div class="philosopher-dates">c. 624–546 BCE</div>
+                        <div class="arche-concept">Arche: Water (ὕδωρ)</div>
+                        <div class="elements">
+                            <span class="element water">💧 Water</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            The first philosopher to propose a single material substance as the origin of all things. Thales observed that water is essential for life, can exist in multiple states (solid, liquid, gas), and appears everywhere in nature. Everything emerges from and returns to water. He reportedly predicted a solar eclipse in 585 BCE, demonstrating early Greek scientific thinking.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher right" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #9b59b6;"></div>
+                    <div class="card" style="border-color: #9b59b6;">
+                        <div class="philosopher-name">Anaximander of Miletus</div>
+                        <div class="philosopher-dates">c. 610–546 BCE</div>
+                        <div class="arche-concept">Arche: The Apeiron (τὸ ἄπειρον)</div>
+                        <div class="elements">
+                            <span class="element apeiron">∞ The Boundless/Indefinite</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Criticised Thales' water theory as too specific. Proposed the "apeiron" — the boundless, indefinite, or unlimited — as the arche. This abstract principle transcends all observable elements and contains all opposites (hot/cold, wet/dry) in potential. Revolutionary for moving beyond material to conceptual principles. Already recognising that picking any specific element was arbitrary — a remarkably abstract thought for 600 BCE.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher left" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #95a5a6;"></div>
+                    <div class="card" style="border-color: #95a5a6;">
+                        <div class="philosopher-name">Anaximenes of Miletus</div>
+                        <div class="philosopher-dates">c. 586–526 BCE</div>
+                        <div class="arche-concept">Arche: Air (ἀήρ)</div>
+                        <div class="elements">
+                            <span class="element air">💨 Air</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Returned to a material principle but chose air as more fundamental than water. Air becomes all things through rarefaction (becoming fire) and condensation (becoming wind, cloud, water, earth, stone). Introduced an important mechanism of transformation through density changes. Air is life-breath (pneuma), connecting the cosmic and the human.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher right" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #e74c3c;"></div>
+                    <div class="card" style="border-color: #e74c3c;">
+                        <div class="philosopher-name">Heraclitus of Ephesus</div>
+                        <div class="philosopher-dates">c. 535–475 BCE</div>
+                        <div class="arche-concept">Arche: Fire (πῦρ) &amp; Logos</div>
+                        <div class="elements">
+                            <span class="element fire">🔥 Fire</span>
+                            <span class="element nous">⚡ Logos (Reason)</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Fire as arche represents constant change and transformation — "everything flows" (panta rhei). Fire symbolises both destruction and creation, embodying the unity of opposites. Introduced Logos as the rational principle governing cosmic change. Reality is dynamic process, not static substance. "You cannot step into the same river twice."
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher left" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #2c3e50;"></div>
+                    <div class="card" style="border-color: #2c3e50;">
+                        <div class="philosopher-name">Parmenides of Elea</div>
+                        <div class="philosopher-dates">c. 515–450 BCE</div>
+                        <div class="arche-concept">Arche: Being (τὸ ἐόν) — Pure Unity</div>
+                        <div class="elements">
+                            <span class="element being">⚪ Being / The One</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Radical break: true reality (Being) is one, eternal, unchanging, and indivisible. Change and multiplicity are illusions. "What is, is" — Being cannot come from non-Being. Used pure logical reasoning to deny the evidence of the senses. His student Zeno created famous paradoxes defending this view. Directly opposed Heraclitus's flux philosophy, creating a fundamental fault-line in Western thought.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher right" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #16a085;"></div>
+                    <div class="card" style="border-color: #16a085;">
+                        <div class="philosopher-name">Xenophanes of Colophon</div>
+                        <div class="philosopher-dates">c. 570–475 BCE</div>
+                        <div class="arche-concept">Arche: One God / Universe</div>
+                        <div class="elements">
+                            <span class="element nous">🌐 Divine Unity</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Criticised anthropomorphic gods and proposed one supreme deity coextensive with the universe itself. "One god, greatest among gods and men, not at all like mortals in body or thought." This god/cosmos is unchanging and moves all things by thought alone. Influenced Parmenides and the Eleatic school. Early theological and epistemological scepticism — "if horses had gods, their gods would look like horses."
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ERA 2 -->
+            <div class="era">
+                <div class="era-label">Transition: Pluralism Emerges</div>
+                
+                <div class="philosopher left" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #c0392b;"></div>
+                    <div class="card" style="border-color: #c0392b;">
+                        <div class="philosopher-name">Melissus of Samos</div>
+                        <div class="philosopher-dates">c. 470 BCE</div>
+                        <div class="arche-concept">Arche: Infinite Being</div>
+                        <div class="elements">
+                            <span class="element being">∞ Infinite Being</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Extended Parmenides' monism: Being is not just eternal but spatially infinite. Argued that if Being were finite, it would be bounded by void (non-Being), which is impossible. Added that Being must be incorporeal, since bodies have parts and plurality. Last major defender of Eleatic monism before pluralism dominated.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher right" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #f39c12;"></div>
+                    <div class="card" style="border-color: #f39c12;">
+                        <div class="philosopher-name">Pythagoras &amp; Pythagoreans</div>
+                        <div class="philosopher-dates">c. 570–495 BCE</div>
+                        <div class="arche-concept">Arche: Numbers &amp; Mathematical Relations</div>
+                        <div class="elements">
+                            <span class="element numbers">🔢 Number / Form</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Revolutionary departure from material principles. "All is number" — mathematical relationships and proportions are the fundamental reality underlying all things. Discovered mathematical ratios in music (octave 2:1, fifth 3:2), astronomy, geometry. Reality's structure is fundamentally mathematical and harmonic. Combined science, mysticism, and ethics in a religious community.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher left" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #d68910;"></div>
+                    <div class="card" style="border-color: #d68910;">
+                        <div class="philosopher-name">Philolaus of Croton</div>
+                        <div class="philosopher-dates">c. 470–385 BCE</div>
+                        <div class="arche-concept">Limiters &amp; Unlimiteds + Harmonia</div>
+                        <div class="elements">
+                            <span class="element numbers">🔗 Limiters (περαίνοντα)</span>
+                            <span class="element apeiron">∞ Unlimiteds (ἄπειρα)</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Sophisticated Pythagorean cosmology: cosmos formed from two principles — "limiters" (that which defines/bounds) and "unlimiteds" (that which is indefinite), unified by harmonia (fitting-together). First to propose that the Earth moves (around a "central fire"). Reality emerges from mathematical-musical harmony between opposite principles. Bridge between Pythagorean mysticism and early science.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher right" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #e74c3c;"></div>
+                    <div class="card" style="border-color: #e74c3c;">
+                        <div class="philosopher-name">Empedocles of Akragas</div>
+                        <div class="philosopher-dates">c. 494–434 BCE</div>
+                        <div class="arche-concept">Four Roots (Elements) + Two Forces</div>
+                        <div class="elements">
+                            <span class="element water">💧 Water</span>
+                            <span class="element air">💨 Air</span>
+                            <span class="element fire">🔥 Fire</span>
+                            <span class="element earth">🌍 Earth</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Major breakthrough: no single arche, but four eternal, unchangeable "roots" (rhizōmata). All change results from mixing and separation of these four elements, driven by two cosmic forces: Love (Philia) unites elements into unity; Strife (Neikos) separates them back into multiplicity. Cosmic cycle: Love creates a perfect Sphere, Strife dissolves it — endlessly. This pluralistic system explained diversity while maintaining eternal principles, and directly influenced Aristotle's later four-element theory.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher left" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #7f8c8d;"></div>
+                    <div class="card" style="border-color: #7f8c8d;">
+                        <div class="philosopher-name">Diogenes of Apollonia</div>
+                        <div class="philosopher-dates">c. 460 BCE</div>
+                        <div class="arche-concept">Return to Air + Intelligence</div>
+                        <div class="elements">
+                            <span class="element air">💨 Air (with Intelligence)</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Surprising return to monism after Empedocles! Argued that pluralism creates more problems than it solves — how do different substances interact? Revived Anaximenes' air theory but added that air possesses intelligence and purpose. Air pervades everything, is divine, conscious, and governs all things. Combines material monism with teleological explanation. Shows the debate was not a simple linear march from one to many.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ERA 3 -->
+            <div class="era">
+                <div class="era-label">Mature Pluralism</div>
+                
+                <div class="philosopher left" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #1abc9c;"></div>
+                    <div class="card" style="border-color: #1abc9c;">
+                        <div class="philosopher-name">Anaxagoras of Clazomenae</div>
+                        <div class="philosopher-dates">c. 500–428 BCE</div>
+                        <div class="arche-concept">Infinite Seeds (Spermata) + Mind (Nous)</div>
+                        <div class="elements">
+                            <span class="element nous">🧠 Nous (Mind)</span>
+                            <span class="element atoms">∞ Infinite Seeds</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Everything contains "seeds" (spermata) of all substances in different proportions — "all things were together." Introduced Nous (Mind/Intelligence) as a cosmic organising principle separate from matter, initiating rotational motion that separates and arranges the seeds. Mind is pure, unmixed, and knows all things. Inspired Socrates and Plato, who were frustrated that Anaxagoras still explained individual events mechanically rather than teleologically.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="philosopher right" onclick="toggleDescription(this)">
+                    <div class="timeline-dot" style="border-color: #34495e;"></div>
+                    <div class="card" style="border-color: #34495e;">
+                        <div class="philosopher-name">Leucippus &amp; Democritus</div>
+                        <div class="philosopher-dates">c. 460–370 BCE</div>
+                        <div class="arche-concept">Atoms (ἄτομοι) &amp; Void</div>
+                        <div class="elements">
+                            <span class="element atoms">⚛️ Atoms (Indivisible)</span>
+                            <span class="element atoms">⬜ Void (Empty Space)</span>
+                        </div>
+                        <div class="expand-hint">Click to learn more…</div>
+                        <div class="description hidden">
+                            Ultimate pluralism: infinite number of eternal, indivisible, unchangeable atoms (atomoi) of different shapes and sizes moving through void. All phenomena result from atoms combining and separating in mechanical ways. No purpose or design — pure materialism and determinism. Astonishingly prescient of modern atomic theory, over two thousand years before experimental confirmation.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="legend">
+            <div class="legend-title">Key Concepts</div>
+            <div class="legend-items">
+                <div class="legend-item"><div class="legend-color water"></div><span>Water</span></div>
+                <div class="legend-item"><div class="legend-color air"></div><span>Air</span></div>
+                <div class="legend-item"><div class="legend-color fire"></div><span>Fire</span></div>
+                <div class="legend-item"><div class="legend-color earth"></div><span>Earth</span></div>
+                <div class="legend-item"><div class="legend-color apeiron"></div><span>The Boundless</span></div>
+                <div class="legend-item"><div class="legend-color being"></div><span>Being / Unity</span></div>
+                <div class="legend-item"><div class="legend-color numbers"></div><span>Number / Form</span></div>
+                <div class="legend-item"><div class="legend-color nous"></div><span>Mind / Logos</span></div>
+                <div class="legend-item"><div class="legend-color atoms"></div><span>Atoms / Seeds</span></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function toggleDescription(element) {
+            const description = element.querySelector('.description');
+            const hint = element.querySelector('.expand-hint');
+            if (description.classList.contains('hidden')) {
+                description.classList.remove('hidden');
+                hint.textContent = 'Click to collapse…';
+            } else {
+                description.classList.add('hidden');
+                hint.textContent = 'Click to learn more…';
+            }
+        }
+    </script>
+</body>
+</html>
