@@ -10,6 +10,18 @@ Living document. `[ ]` pending · `[~]` in progress · `[x]` done · `[!]` needs
 
 ---
 
+## Session log
+
+### 2026-04-25
+
+- [x] **DEPLOY_PRD.md** — full deployment PRD written (D1–D4 milestones, security, PWA offline, ops)
+- [x] **Sync strategy** — decided cloud-first (NAS always reachable via CF Tunnel); offline writes deferred
+- [x] **CF Tunnel** — confirmed same account as StoryBrew; `cert.pem` reusable, no re-login needed
+- [x] **Git setup** — repo initialised, `.gitignore` hardened (secrets, data, memory, CF creds, tokens.txt), pushed to [github.com/Zaklamp02/digitaltwin](https://github.com/Zaklamp02/digitaltwin)
+- [x] **OpenAI key rotation** — key that leaked into `.env.example` during initial commit has been rotated
+
+---
+
 ## Active backlog
 
 ### D1 — NAS Deployment 🚀
