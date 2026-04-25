@@ -95,7 +95,7 @@ export function InputBar({
           onClick={submit}
           disabled={disabled || loading || !value.trim()}
           aria-label="Send"
-          className="shrink-0 h-11 w-11 rounded-full bg-accent text-white flex items-center justify-center hover:bg-accent-fg disabled:bg-ink/20 transition"
+          className="shrink-0 h-11 w-11 rounded-full border bg-white dark:bg-gray-800 border-ink/15 dark:border-white/15 text-ink dark:text-white flex items-center justify-center hover:border-accent hover:text-accent disabled:opacity-30 transition"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 19V5" />

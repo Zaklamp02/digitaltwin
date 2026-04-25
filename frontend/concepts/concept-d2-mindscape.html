@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Concept D v2 — "The Mindscape"</title>
+<!--
+  CONCEPT D v2: THE MINDSCAPE — INLINE CHAT
+  ==========================================
+  One continuous page. No overlays. The chat input never leaves.
+
+  - Minimal top nav (name + links)
+  - Hero: name, subtitle, network canvas background
+  - Chat input bar fixed to bottom of hero viewport
+  - Click a node → network zooms toward it, others push out,
+    children expand. A conversation starter message appears inline
+    above the input, hero text slides up to make room.
+  - Navigate away (click another node or "×") → children contract,
+    zoom resets, messages stay as history.
+  - Scroll below the hero/chat to see normal website content.
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #fbfbf9;
+    --ink: #0f172a;
+    --ink-70: rgba(15, 23, 42, 0.7);
+    --ink-50: rgba(15, 23, 42, 0.5);
+    --ink-30: rgba(15, 23, 42, 0.3);
+    --ink-20: rgba(15, 23, 42, 0.2);
+    --ink-10: rgba(15, 23, 42, 0.1);
+    --ink-08: rgba(15, 23, 42, 0.06);
+    --accent: #0F766E;
+    --ar: 15, 118, 110;
+    --accent-light: rgba(15, 118, 110, 0.08);
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* ── TOP NAV ─────────────────────────────────────────────────── */
+  .topnav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.5rem;
+    background: rgba(251, 251, 249, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--ink-08);
+  }
+
+  .topnav-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: -0.02em;
+  }
+
+  .topnav-links {
+    display: flex;
+    gap: 1.25rem;
+  }
+
+  .topnav-links a {
+    font-size: 0.75rem;
+    color: var(--ink-50);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .topnav-links a:hover { color: var(--accent); }
+
+  /* ── HERO SECTION (viewport-height) ─────────────────────────── */
+  .hero {
+    position: relative;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  canvas#mindscape {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+  }
+
+  /* ── HERO CONTENT (slides up when chat starts) ──────────────── */
+  .hero-content {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.6s ease;
+  }
+
+  .hero-content.pushed-up {
+    transform: translateY(-45vh);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .hero-top {
+    padding: 6.5rem 2rem 0;
+    max-width: 520px;
+  }
+
+  .hero-name {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+  }
+
+  .hero-sub {
+    margin-top: 0.6rem;
+    font-size: clamp(0.85rem, 1.3vw, 1rem);
+    font-weight: 400;
+    color: var(--ink-50);
+    line-height: 1.55;
+  }
+
+  .hero-cta-links {
+    display: flex;
+    gap: 1.25rem;
+    margin-top: 1rem;
+  }
+
+  .hero-cta-links a {
+    font-size: 0.78rem;
+    color: var(--ink-30);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .hero-cta-links a:hover { color: var(--accent); }
+
+  /* ── CHAT AREA (between hero text and input) ────────────────── */
+  .chat-area {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 0 2rem;
+    max-width: 640px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .chat-area::-webkit-scrollbar { display: none; }
+
+  .chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .chat-bubble {
+    max-width: 88%;
+    padding: 0.7rem 1rem;
+    border-radius: 1rem;
+    font-size: 0.88rem;
+    line-height: 1.55;
+    animation: bubbleIn 0.45s ease-out both;
+  }
+
+  @keyframes bubbleIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .chat-bubble.twin {
+    background: rgba(251, 251, 249, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--ink-08);
+    border-bottom-left-radius: 0.25rem;
+    align-self: flex-start;
+  }
+
+  .chat-bubble.twin .twin-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.03em;
+  }
+
+  .chat-bubble.user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: white;
+    border-bottom-right-radius: 0.25rem;
+  }
+
+  /* Active topic badge (appears above messages when a node is selected) */
+  .topic-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: flex-start;
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-light);
+    padding: 0.2rem 0.6rem;
+    border-radius: 1rem;
+    margin-bottom: 0.25rem;
+    animation: bubbleIn 0.3s ease-out both;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .topic-badge:hover { background: rgba(15, 118, 110, 0.15); }
+
+  .topic-badge .badge-x {
+    font-size: 0.7rem;
+    font-weight: 600;
+    opacity: 0.6;
+  }
+
+  /* ── INPUT BAR (always at bottom of hero) ───────────────────── */
+  .input-bar {
+    position: relative;
+    z-index: 2;
+    padding: 0.75rem 2rem 1.25rem;
+  }
+
+  .input-label {
+    font-size: 0.65rem;
+    color: var(--ink-20);
+    margin-bottom: 0.4rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: opacity 0.4s;
+  }
+
+  .input-wrap {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--ink-20);
+    border-radius: 1rem;
+    padding: 0.65rem 0.9rem;
+    background: rgba(251, 251, 249, 0.88);
+    backdrop-filter: blur(12px);
+    transition: border-color 0.3s, box-shadow 0.3s;
+    max-width: 560px;
+  }
+
+  .input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-light);
+  }
+
+  .input-field {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 0.95rem;
+    color: var(--ink);
+    background: transparent;
+  }
+
+  .input-field::placeholder { color: var(--ink-20); }
+
+  .input-send {
+    background: var(--accent);
+    border: none;
+    color: white;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.25;
+    transition: opacity 0.2s, transform 0.15s;
+    flex-shrink: 0;
+  }
+
+  .input-send.active { opacity: 1; }
+  .input-send:hover { transform: scale(1.05); }
+
+  /* Scroll hint */
+  .scroll-hint {
+    position: absolute;
+    bottom: 6.5rem;
+    right: 2rem;
+    font-size: 0.6rem;
+    color: var(--ink-20);
+    writing-mode: vertical-rl;
+    letter-spacing: 0.1em;
+    z-index: 2;
+    animation: fade-pulse 3s ease-in-out infinite;
+    transition: opacity 0.4s;
+  }
+
+  .scroll-hint.hidden { opacity: 0; pointer-events: none; }
+
+  @keyframes fade-pulse {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 0.6; }
+  }
+
+  /* ── NODE TOOLTIP ───────────────────────────────────────────── */
+  .node-tooltip {
+    position: fixed;
+    z-index: 10;
+    background: rgba(251, 251, 249, 0.92);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(15, 118, 110, 0.18);
+    border-radius: 0.45rem;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--accent);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.2s, transform 0.2s;
+    white-space: nowrap;
+  }
+
+  .node-tooltip.visible { opacity: 1; transform: translateY(0); }
+
+  .node-tooltip .tip-hint {
+    font-weight: 400;
+    color: var(--ink-20);
+    font-size: 0.55rem;
+    margin-top: 0.1rem;
+  }
+
+  /* ── SECTIONS BELOW ─────────────────────────────────────────── */
+  .section {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4rem 2rem;
+  }
+
+  .section-title {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-20);
+    margin-bottom: 2rem;
+  }
+
+  .projects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .project-card {
+    border: 1px solid var(--ink-08);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .project-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 12px rgba(15, 118, 110, 0.08);
+  }
+
+  .project-card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .project-card .tag { font-size: 0.7rem; color: var(--accent); margin-bottom: 0.5rem; }
+  .project-card p { font-size: 0.8rem; color: var(--ink-50); line-height: 1.5; }
+
+  .curiosa-item { border-bottom: 1px solid var(--ink-08); padding: 1.25rem 0; }
+  .curiosa-item:last-child { border-bottom: none; }
+  .curiosa-date { font-size: 0.7rem; color: var(--ink-20); }
+  .curiosa-title { font-size: 0.95rem; font-weight: 600; margin-top: 0.25rem; }
+  .curiosa-excerpt { font-size: 0.8rem; color: var(--ink-50); margin-top: 0.35rem; line-height: 1.5; }
+  .curiosa-tags { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .curiosa-tags span {
+    font-size: 0.65rem; padding: 0.15rem 0.5rem; border-radius: 1rem;
+    background: var(--accent-light); color: var(--accent);
+  }
+
+  .see-all { display: inline-block; margin-top: 1.5rem; font-size: 0.8rem; color: var(--accent); text-decoration: none; }
+  .see-all:hover { text-decoration: underline; }
+
+  .footer { text-align: center; padding: 3rem 2rem; font-size: 0.7rem; color: var(--ink-20); }
+</style>
+</head>
+<body>
+
+<!-- ── TOP NAV ─────────────────────────────────────────────────────── -->
+<nav class="topnav">
+  <div class="topnav-name">Sebastiaan den Boer</div>
+  <div class="topnav-links">
+    <a href="#">Projects</a>
+    <a href="#">Curiosa</a>
+    <a href="#">LinkedIn</a>
+    <a href="#">GitHub</a>
+    <a href="#">CV ↓</a>
+  </div>
+</nav>
+
+<!-- ── HERO ────────────────────────────────────────────────────────── -->
+<div class="hero" id="hero">
+  <canvas id="mindscape"></canvas>
+
+  <div class="hero-content" id="heroContent">
+    <div class="hero-top">
+      <h1 class="hero-name">Sebastiaan<br>den Boer</h1>
+      <p class="hero-sub">I build AI systems that make high-stakes decisions better. Director of Data Science & AI. Nerd with MBA.</p>
+      <div class="hero-cta-links">
+        <a href="#">LinkedIn</a>
+        <a href="#">GitHub</a>
+        <a href="#">Email</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-area" id="chatArea">
+    <div class="chat-messages" id="chatMessages"></div>
+  </div>
+
+  <div class="input-bar">
+    <div class="input-label" id="inputLabel">Ask my digital twin anything</div>
+    <div class="input-wrap">
+      <input class="input-field" type="text" placeholder="What's your experience with AI agents?" id="inputField" autocomplete="off">
+      <button class="input-send" id="inputSend" aria-label="Send">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <span class="scroll-hint" id="scrollHint">scroll for more</span>
+</div>
+
+<div class="node-tooltip" id="nodeTooltip">
+  <div id="tipLabel"></div>
+  <div class="tip-hint">click to explore</div>
+</div>
+
+<!-- ── BELOW THE FOLD ─────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">Projects</div>
+  <div class="projects-grid">
+    <a href="#" class="project-card"><h3>StoryBrew</h3><div class="tag">Web app · dromenbrouwer.nl</div><p>AI-powered interactive story platform. Generative AI meets narrative design.</p></a>
+    <a href="#" class="project-card"><h3>Digital Twin</h3><div class="tag">This site · FastAPI + React</div><p>RAG-powered AI agent with knowledge graph, multi-tier access, and Telegram.</p></a>
+    <a href="#" class="project-card"><h3>RealLifeRisk</h3><div class="tag">R/Shiny · Board game</div><p>Companion app for a physical strategy game. Move validation over local WiFi.</p></a>
+    <a href="#" class="project-card"><h3>Woodworking</h3><div class="tag">Physical · Ongoing</div><p>Built a full kitchen from scratch. Currently: bespoke cabinet with reading nook.</p></a>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">The Curiosa</div>
+  <div class="curiosa-item">
+    <div class="curiosa-date">25 Apr 2026</div>
+    <div class="curiosa-title">Docker DNS aliases can silently hijack your other services</div>
+    <div class="curiosa-excerpt">Found out the hard way: if two Docker Compose stacks share a network and both have a service named "frontend", the tunnel picks whichever it finds first...</div>
+    <div class="curiosa-tags"><span>TIL</span><span>Docker</span></div>
+  </div>
+  <div class="curiosa-item">
+    <div class="curiosa-date">22 Apr 2026</div>
+    <div class="curiosa-title">Why I built my own digital twin instead of using a template</div>
+    <div class="curiosa-excerpt">Every AI chatbot builder promises "your personal assistant in 5 minutes." Here's why I spent weeks building mine from scratch instead...</div>
+    <div class="curiosa-tags"><span>AI</span><span>Projects</span></div>
+  </div>
+  <a href="#" class="see-all">See all posts →</a>
+</div>
+
+<div class="footer">© 2026 Sebastiaan den Boer · Built with too many Docker containers</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     MINDSCAPE ENGINE v2 — inline chat, zoom/pan, expand/contract
+     ══════════════════════════════════════════════════════════════ -->
+<script>
+// ── GRAPH DATA ──────────────────────────────────────────────────────
+const GRAPH = [
+  {
+    id: 'ai', label: 'AI & ML', x: 0.72, y: 0.22, r: 22,
+    children: [
+      { id: 'llm', label: 'LLMs', dx: -60, dy: -40, r: 11 },
+      { id: 'rag', label: 'RAG', dx: 48, dy: -30, r: 11 },
+      { id: 'agents', label: 'Agents', dx: 58, dy: 22, r: 11 },
+      { id: 'nlp', label: 'NLP', dx: -50, dy: 32, r: 10 },
+    ],
+    chatOpener: "You're exploring AI & ML — that's really where I live. I lead AI strategy at scale and build things like this digital twin. What would you like to know? My views on LLMs in production, agent architectures, or the RAG system behind this site?",
+  },
+  {
+    id: 'career', label: 'Career', x: 0.83, y: 0.50, r: 20,
+    children: [
+      { id: 'leadership', label: 'Leadership', dx: 52, dy: -22, r: 10 },
+      { id: 'strategy', label: 'Strategy', dx: 48, dy: 28, r: 10 },
+      { id: 'mba', label: 'MBA', dx: -42, dy: 38, r: 10 },
+    ],
+    chatOpener: "Career — happy to go there. I've gone from hands-on data science to directing AI strategy for large organisations. The MBA was a deliberate choice to bridge tech and business. What angle interests you?",
+  },
+  {
+    id: 'projects', label: 'Projects', x: 0.62, y: 0.62, r: 20,
+    children: [
+      { id: 'storybrew', label: 'StoryBrew', dx: -52, dy: -28, r: 10 },
+      { id: 'twin', label: 'Digital Twin', dx: 52, dy: -22, r: 10 },
+      { id: 'risk', label: 'RealLifeRisk', dx: -42, dy: 32, r: 10 },
+    ],
+    chatOpener: "Projects! I always have a few going. StoryBrew is an AI storytelling platform, this Digital Twin is my personal RAG agent, and RealLifeRisk is a board game companion app. Which one catches your eye?",
+  },
+  {
+    id: 'woodworking', label: 'Woodworking', x: 0.32, y: 0.70, r: 18,
+    children: [
+      { id: 'kitchen', label: 'Kitchen build', dx: -48, dy: -22, r: 10 },
+      { id: 'furniture', label: 'Furniture', dx: 42, dy: -22, r: 10 },
+      { id: 'tools', label: 'Tools', dx: 0, dy: 38, r: 9 },
+    ],
+    chatOpener: "Ah, woodworking — my zen mode. I built our entire kitchen from scratch and I'm working on a bespoke reading nook. Want to hear about the process, the tools, or the many mistakes I've learned from?",
+  },
+  {
+    id: 'values', label: 'Values', x: 0.20, y: 0.34, r: 18,
+    children: [
+      { id: 'craft', label: 'Craftsmanship', dx: -52, dy: -18, r: 10 },
+      { id: 'curiosity', label: 'Curiosity', dx: -38, dy: 32, r: 10 },
+      { id: 'honesty', label: 'Honesty', dx: 42, dy: 28, r: 9 },
+    ],
+    chatOpener: "Values — good topic. Craftsmanship, intellectual curiosity, and radical honesty drive how I lead teams and build things. These aren't just words on a wall. What resonates with you?",
+  },
+  {
+    id: 'hobbies', label: 'Hobbies', x: 0.17, y: 0.60, r: 17,
+    children: [
+      { id: 'running', label: 'Running', dx: -42, dy: -22, r: 9 },
+      { id: 'cooking', label: 'Cooking', dx: -38, dy: 28, r: 9 },
+      { id: 'boardgames', label: 'Board games', dx: 48, dy: 18, r: 10 },
+    ],
+    chatOpener: "Beyond work, I run (slowly), cook (enthusiastically), and play too many board games. I once designed my own strategy game and built an app for it. Ask me about any of these!",
+  },
+  {
+    id: 'data', label: 'Data', x: 0.50, y: 0.30, r: 17,
+    children: [
+      { id: 'eng', label: 'Engineering', dx: -42, dy: -28, r: 10 },
+      { id: 'viz', label: 'Visualisation', dx: 42, dy: -22, r: 10 },
+      { id: 'infra', label: 'Infra', dx: 38, dy: 28, r: 9 },
+    ],
+    chatOpener: "Data — it's the foundation. I've built data platforms on Spark, Snowflake, BigQuery, and more. From messy ETL to clean dashboards, I've seen it all. What's your question?",
+  },
+];
+
+const EDGES = [
+  [0, 1], [0, 2], [0, 6], [1, 4], [2, 3], [2, 5], [3, 5], [4, 5], [1, 6], [4, 0],
+];
+
+
+// ── CANVAS ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('mindscape');
+const ctx = canvas.getContext('2d');
+let W, H;
+let mouse = { x: -9999, y: -9999 };
+let time = 0;
+
+// View transform: smooth camera
+let cam = { x: 0, y: 0, zoom: 1 };        // current (animated)
+let camTarget = { x: 0, y: 0, zoom: 1 };   // target
+const CAM_LERP = 0.045;
+
+// State
+let focusedNode = null;   // currently zoomed-into node (or null)
+let hoveredNode = null;
+let childExpandT = 0;     // 0→1 expansion of children
+let chatActive = false;   // whether any messages are showing
+
+// Drift per node
+const drifts = GRAPH.map(() => ({
+  ph: Math.random() * Math.PI * 2,
+  ax: 3 + Math.random() * 5, ay: 3 + Math.random() * 5,
+  fx: 0.25 + Math.random() * 0.35, fy: 0.25 + Math.random() * 0.35,
+}));
+
+// Ambient particles
+const particles = Array.from({ length: 50 }, () => ({
+  x: Math.random(), y: Math.random(),
+  vx: (Math.random() - 0.5) * 0.00012,
+  vy: (Math.random() - 0.5) * 0.00012,
+  r: 1 + Math.random() * 1.5,
+  a: 0.03 + Math.random() * 0.06,
+}));
+
+function resize() {
+  W = canvas.clientWidth;
+  H = canvas.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+
+// ── COORD HELPERS ───────────────────────────────────────────────────
+function nodeBasePos(node) {
+  return { x: node.x * W, y: node.y * H };
+}
+
+function nodeDrift(node) {
+  const d = drifts[GRAPH.indexOf(node)];
+  return {
+    x: Math.sin(time * d.fx + d.ph) * d.ax,
+    y: Math.cos(time * d.fy + d.ph * 1.3) * d.ay,
+  };
+}
+
+function nodeWorldPos(node) {
+  const b = nodeBasePos(node);
+  const d = nodeDrift(node);
+  return { x: b.x + d.x, y: b.y + d.y };
+}
+
+// World → screen (through camera)
+function toScreen(wx, wy) {
+  return {
+    x: (wx - cam.x) * cam.zoom + W / 2,
+    y: (wy - cam.y) * cam.zoom + H / 2,
+  };
+}
+
+// Screen → world
+function toWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / cam.zoom + cam.x,
+    y: (sy - H / 2) / cam.zoom + cam.y,
+  };
+}
+
+
+// ── DRAWING ─────────────────────────────────────────────────────────
+function drawParticles() {
+  const worldMouse = toWorld(mouse.x, mouse.y);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0 || p.x > 1) p.vx *= -1;
+    if (p.y < 0 || p.y > 1) p.vy *= -1;
+    const wx = p.x * W, wy = p.y * H;
+    const s = toScreen(wx, wy);
+    const dm = Math.hypot(wx - worldMouse.x, wy - worldMouse.y);
+    const glow = dm < 160 ? (160 - dm) / 160 * 0.1 : 0;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, (p.r + glow * 3) * cam.zoom, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15},${118},${110},${p.a + glow})`;
+    ctx.fill();
+  });
+}
+
+function drawEdges() {
+  const worldMouse = toWorld(mouse.x, mouse.y);
+  EDGES.forEach(([i, j]) => {
+    const aw = nodeWorldPos(GRAPH[i]);
+    const bw = nodeWorldPos(GRAPH[j]);
+    const a = toScreen(aw.x, aw.y);
+    const b = toScreen(bw.x, bw.y);
+    const midWx = (aw.x + bw.x) / 2;
+    const midWy = (aw.y + bw.y) / 2;
+    const dm = Math.hypot(midWx - worldMouse.x, midWy - worldMouse.y);
+    const prox = dm < 180 ? (180 - dm) / 180 : 0;
+
+    // If focused, fade edges not connected to focused node
+    let fadeAlpha = 1;
+    if (focusedNode) {
+      const fi = GRAPH.indexOf(focusedNode);
+      if (i !== fi && j !== fi) fadeAlpha = 0.15;
+    }
+
+    const alpha = (0.05 + prox * 0.12) * fadeAlpha;
+    const cpx = (a.x + b.x) / 2 + (a.y - b.y) * 0.08;
+    const cpy = (a.y + b.y) / 2 - (a.x - b.x) * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(cpx, cpy, b.x, b.y);
+    ctx.strokeStyle = `rgba(${15},${118},${110},${alpha})`;
+    ctx.lineWidth = cam.zoom * 0.8;
+    ctx.stroke();
+  });
+}
+
+function drawNodes() {
+  hoveredNode = null;
+  const worldMouse = toWorld(mouse.x, mouse.y);
+
+  GRAPH.forEach((node) => {
+    const wp = nodeWorldPos(node);
+    const sp = toScreen(wp.x, wp.y);
+    const sr = node.r * cam.zoom;
+    const dm = Math.hypot(sp.x - mouse.x, sp.y - mouse.y);
+    const isHover = dm < sr + 14 * cam.zoom;
+    if (isHover && !focusedNode) hoveredNode = node;
+
+    // If focused on another node, dim this one
+    let dimFactor = 1;
+    if (focusedNode && focusedNode !== node) {
+      dimFactor = 0.2;
+    }
+    if (focusedNode === node) dimFactor = 1.3;
+
+    const glowAmount = isHover && !focusedNode ? 1 : Math.max(0, 1 - dm / (220 * cam.zoom)) * 0.25;
+    const ga = glowAmount * dimFactor;
+
+    // Glow ring
+    if (ga > 0.03) {
+      const grad = ctx.createRadialGradient(sp.x, sp.y, sr * 0.6, sp.x, sp.y, sr + 22 * cam.zoom * ga);
+      grad.addColorStop(0, `rgba(${15},${118},${110},${0.07 * ga})`);
+      grad.addColorStop(1, `rgba(${15},${118},${110},0)`);
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, sr + 22 * cam.zoom * ga, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+    // Circle
+    const fillA = (0.035 + ga * 0.08) * dimFactor;
+    const strokeA = (0.12 + ga * 0.3) * dimFactor;
+    const drawR = sr + (isHover && !focusedNode ? 3 * cam.zoom : 0) + (focusedNode === node ? 5 * cam.zoom : 0);
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, drawR, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15},${118},${110},${fillA})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${15},${118},${110},${strokeA})`;
+    ctx.lineWidth = (focusedNode === node ? 1.8 : 0.8) * cam.zoom;
+    ctx.stroke();
+
+    // Inner dot
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, (2.5 + ga * 1.5) * cam.zoom, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15},${118},${110},${(0.25 + ga * 0.45) * dimFactor})`;
+    ctx.fill();
+
+    // Label
+    const labelA = (0.18 + ga * 0.55) * dimFactor;
+    const fontSize = ((isHover && !focusedNode) || focusedNode === node ? 11.5 : 10) * cam.zoom;
+    ctx.font = `${(isHover || focusedNode === node) ? '500' : '400'} ${fontSize}px Inter, sans-serif`;
+    ctx.fillStyle = `rgba(${15},${118},${110},${labelA})`;
+    ctx.textAlign = 'center';
+    ctx.fillText(node.label, sp.x, sp.y + drawR + 14 * cam.zoom);
+  });
+}
+
+function drawChildren() {
+  if (!focusedNode || childExpandT <= 0.01) return;
+
+  const parentW = nodeWorldPos(focusedNode);
+  const t = childExpandT;
+  const spread = 2.2; // how far children spread
+
+  focusedNode.children.forEach((child) => {
+    const cwx = parentW.x + child.dx * spread * t;
+    const cwy = parentW.y + child.dy * spread * t;
+    const cs = toScreen(cwx, cwy);
+    const ps = toScreen(parentW.x, parentW.y);
+    const cr = child.r * cam.zoom * t;
+
+    // Edge to parent
+    ctx.beginPath();
+    ctx.moveTo(ps.x, ps.y);
+    ctx.lineTo(cs.x, cs.y);
+    ctx.strokeStyle = `rgba(${15},${118},${110},${0.1 * t})`;
+    ctx.lineWidth = 0.7 * cam.zoom;
+    ctx.stroke();
+
+    // Child node
+    ctx.beginPath();
+    ctx.arc(cs.x, cs.y, cr, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15},${118},${110},${0.05 * t})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${15},${118},${110},${0.22 * t})`;
+    ctx.lineWidth = 0.7 * cam.zoom;
+    ctx.stroke();
+
+    // Child label
+    const fs = 9 * cam.zoom * t;
+    ctx.font = `400 ${fs}px Inter, sans-serif`;
+    ctx.fillStyle = `rgba(${15},${118},${110},${0.5 * t})`;
+    ctx.textAlign = 'center';
+    ctx.fillText(child.label, cs.x, cs.y + cr + 11 * cam.zoom);
+  });
+}
+
+
+// ── TOOLTIP ─────────────────────────────────────────────────────────
+const tooltip = document.getElementById('nodeTooltip');
+const tipLabel = document.getElementById('tipLabel');
+
+function updateTooltip() {
+  if (hoveredNode && !focusedNode) {
+    const wp = nodeWorldPos(hoveredNode);
+    const sp = toScreen(wp.x, wp.y);
+    tipLabel.textContent = hoveredNode.label;
+    tooltip.style.left = sp.x + 'px';
+    tooltip.style.top = (sp.y - hoveredNode.r * cam.zoom - 38) + 'px';
+    tooltip.classList.add('visible');
+    canvas.style.cursor = 'pointer';
+  } else {
+    tooltip.classList.remove('visible');
+    canvas.style.cursor = focusedNode ? 'default' : 'default';
+  }
+}
+
+
+// ── CLICK → FOCUS NODE ──────────────────────────────────────────────
+canvas.addEventListener('click', (e) => {
+  if (hoveredNode && !focusedNode) {
+    focusNode(hoveredNode);
+  }
+});
+
+function focusNode(node) {
+  focusedNode = node;
+  childExpandT = 0;
+  const wp = nodeWorldPos(node);
+
+  // Set camera target: zoom toward node, offset slightly so node ends up upper-right area
+  camTarget.x = wp.x + W * 0.08;
+  camTarget.y = wp.y - H * 0.05;
+  camTarget.zoom = 1.8;
+
+  // Push hero content up, add topic badge + chat opener
+  heroContent.classList.add('pushed-up');
+  scrollHint.classList.add('hidden');
+
+  addTopicBadge(node);
+  chatActive = true;
+
+  // Delay the opener slightly for smooth feel
+  setTimeout(() => addTwinMessage(node.chatOpener), 400);
+}
+
+function unfocusNode() {
+  if (!focusedNode) return;
+  focusedNode = null;
+  camTarget.x = 0;
+  camTarget.y = 0;
+  camTarget.zoom = 1;
+
+  // Don't remove messages — they stay as history
+  // But hero can come back if no messages
+  if (chatMessages.children.length === 0) {
+    heroContent.classList.remove('pushed-up');
+  }
+  scrollHint.classList.remove('hidden');
+}
+
+
+// ── CHAT MESSAGES ───────────────────────────────────────────────────
+const chatMessages = document.getElementById('chatMessages');
+const heroContent = document.getElementById('heroContent');
+const scrollHint = document.getElementById('scrollHint');
+const inputField = document.getElementById('inputField');
+const inputSend = document.getElementById('inputSend');
+const inputLabel = document.getElementById('inputLabel');
+
+function addTopicBadge(node) {
+  const badge = document.createElement('div');
+  badge.className = 'topic-badge';
+  badge.innerHTML = `${node.label} <span class="badge-x">×</span>`;
+  badge.addEventListener('click', () => {
+    unfocusNode();
+  });
+  chatMessages.appendChild(badge);
+}
+
+function addTwinMessage(text) {
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble twin';
+  bubble.innerHTML = `<div class="twin-label">Sebastiaan's twin</div>${text}`;
+  chatMessages.appendChild(bubble);
+  scrollChatDown();
+  // Push hero up if not already
+  heroContent.classList.add('pushed-up');
+}
+
+function addUserMessage(text) {
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble user';
+  bubble.textContent = text;
+  chatMessages.appendChild(bubble);
+  scrollChatDown();
+}
+
+function scrollChatDown() {
+  const chatArea = document.getElementById('chatArea');
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+// Input handling
+inputField.addEventListener('input', () => {
+  inputSend.classList.toggle('active', inputField.value.trim().length > 0);
+});
+
+function sendMessage() {
+  const msg = inputField.value.trim();
+  if (!msg) return;
+  inputField.value = '';
+  inputSend.classList.remove('active');
+
+  // If no node focused yet, focus on a default and push hero up
+  if (!focusedNode && !chatActive) {
+    heroContent.classList.add('pushed-up');
+    scrollHint.classList.add('hidden');
+    chatActive = true;
+  }
+
+  addUserMessage(msg);
+
+  // Simulate twin reply
+  setTimeout(() => {
+    const topicName = focusedNode ? focusedNode.label : 'that';
+    addTwinMessage(`That's a great question about ${topicName}. In the live site, this response would stream from the real digital twin API via SSE. For now, imagine a thoughtful, nuanced answer appearing word by word...`);
+  }, 600);
+}
+
+inputField.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendMessage();
+});
+inputSend.addEventListener('click', sendMessage);
+
+
+// ── ANIMATION LOOP ──────────────────────────────────────────────────
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function animate() {
+  time += 0.016;
+
+  // Smooth camera
+  cam.x = lerp(cam.x, camTarget.x, CAM_LERP);
+  cam.y = lerp(cam.y, camTarget.y, CAM_LERP);
+  cam.zoom = lerp(cam.zoom, camTarget.zoom, CAM_LERP);
+
+  // Expand/contract children
+  if (focusedNode) {
+    childExpandT = Math.min(1, childExpandT + 0.025);
+  } else {
+    childExpandT = Math.max(0, childExpandT - 0.035);
+  }
+
+  ctx.clearRect(0, 0, W, H);
+  drawParticles();
+  drawEdges();
+  drawNodes();
+  drawChildren();
+  updateTooltip();
+
+  requestAnimationFrame(animate);
+}
+
+
+// ── MOUSE TRACKING ──────────────────────────────────────────────────
+window.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = -9999; mouse.y = -9999;
+});
+
+
+// ── GO ──────────────────────────────────────────────────────────────
+animate();
+</script>
+
+</body>
+</html>

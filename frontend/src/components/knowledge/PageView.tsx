@@ -186,6 +186,40 @@ function RolesEditor({ roles, pageId, onSaved }: { roles: string[]; pageId: stri
   );
 }
 
+// ── Featured toggle ───────────────────────────────────────────────────────────
+
+function FeaturedToggle({ pageId, metadata, onSaved }: { pageId: string; metadata: Record<string, unknown>; onSaved: () => void }) {
+  const isFeatured = !!metadata?.featured;
+  const [loading, setLoading] = useState(false);
+
+  const toggle = useCallback(async () => {
+    setLoading(true);
+    try {
+      await apiFetch(`/nodes/${pageId}/featured`, { method: "PATCH" });
+      onSaved();
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [pageId, onSaved]);
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={loading}
+      title={isFeatured ? "Remove from landing page" : "Show on landing page"}
+      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+        isFeatured
+          ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+          : "bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+      }`}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill={isFeatured ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+      </svg>
+      {isFeatured ? "Featured" : "Feature"}
+    </button>
+  );
+}
+
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
 
 function Breadcrumb({ page }: { page: { id: string; edges: EdgeInfo[] } }) {
@@ -324,6 +358,7 @@ export default function PageView() {
             </div>
             <div className="flex items-center gap-2">
               <RolesEditor roles={currentPage.roles} pageId={currentPage.id} onSaved={handleSaved} />
+              <FeaturedToggle pageId={currentPage.id} metadata={currentPage.metadata} onSaved={handleSaved} />
               <span className="text-xs text-gray-400 ml-2">
                 Updated {new Date(currentPage.updated_at).toLocaleDateString("nl-NL")}
               </span>

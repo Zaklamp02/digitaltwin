@@ -20,19 +20,34 @@ Living document. `[ ]` pending · `[~]` in progress · `[x]` done · `[!]` needs
 - [x] **Git setup** — repo initialised, `.gitignore` hardened (secrets, data, memory, CF creds, tokens.txt), pushed to [github.com/Zaklamp02/digitaltwin](https://github.com/Zaklamp02/digitaltwin)
 - [x] **OpenAI key rotation** — key that leaked into `.env.example` during initial commit has been rotated
 
+### 2026-04-26
+
+- [x] **Mindscape canvas restored** — reverted MindscapeCanvas.tsx and App.tsx back to the smooth "wow super cool" version after the navStack rewrite broke zoom/fluidity
+- [x] **Mic button** — added STT microphone button to inline chat input bar on the Mindscape landing page
+- [x] **Featured toggle fix** — `apiFetch` was double-prefixing `/api/admin` on the featured PATCH endpoint; fixed
+- [x] **Dynamic root nodes** — replaced hardcoded `TOP_LEVEL_IDS` with `featured` flag from DB; admin can toggle which nodes appear on landing page via star button
+- [x] **LABELS removed** — nodes now show their actual DB title instead of hardcoded overrides
+- [x] **Responsive zoom** — `DEFAULT_ZOOM` is 0.9 on mobile (<600px) vs 1.35 on desktop
+- [x] **Multi-level graph traversal** — click a child node to dive deeper; camera zooms smoothly, layout rebuilds centered on that child with its own children fanning out
+- [x] **Child count badges** — small number badges on child nodes show how many sub-children they have
+- [x] **Back navigation** — click empty space while dived to back out one level; click at root to unfocus; goHome resets full dive stack
+- [x] **Ring crossfade animation** — children fade in/out during dive/back transitions
+
 ---
 
 ## Active backlog
 
-### D1 — NAS Deployment 🚀
+### D1 — NAS Deployment 🚀 ✅
 
-Deploy to NAS at `sebastiaandenboer.org` via Cloudflare Tunnel. See [DEPLOY_PRD.md](./DEPLOY_PRD.md) for full spec.
+Deployed to NAS at `sebastiaandenboer.org` via Cloudflare Tunnel (StoryBrew stack's existing tunnel).
 
-- [ ] **D1.1** Update `docker-compose.yml` — add `cloudflared` service, `digital-twin-net` network, remove external port 5173
-- [ ] **D1.2** Change `nginx.conf` `listen` to port 80 (internal-only; CF handles TLS)
-- [ ] **D1.3** Provision new CF tunnel (`cloudflared tunnel create digital-twin`), add DNS routes for `sebastiaandenboer.org` + `www.`
-- [ ] **D1.4** Add `Makefile` deploy targets (`make deploy`, `make restart`, `make logs`)
-- [ ] **D1.5** Initial NAS directory + secrets setup (one-time manual step)
+- [x] **D1.1** `docker-compose.yml` — `digital-twin-net` internal network + `cf-tunnel-net` external, service renamed `web` (avoids `frontend` DNS collision with StoryBrew)
+- [x] **D1.2** `nginx.conf` listens on port 80 (internal); CF handles TLS
+- [x] **D1.3** CF Tunnel ingress configured: `sebastiaandenboer.org → http://digital-twin-frontend:80`
+- [x] **D1.4** `Makefile` deploy targets added
+- [x] **D1.5** NAS directory + secrets + `.env` set up at `/volume1/docker/digital_twin`
+
+> **Note:** `houtenjong_wordpress_1` was manually connected to `cf-tunnel-net` — ephemeral fix, will break on container restart. Not our compose file; pre-existing issue.
 
 ### D2 — Security Hardening 🔒
 
@@ -92,6 +107,20 @@ Implemented: `tests/golden_qa.yaml`, `tests/test_golden.py`, `tests/eval_ragas.p
 
 ## Next up
 
+### ✅ W1 — Language toggle (NL / EN) ✅ 2026-04-25
+
+Implemented. Backend accepts `language` field, frontend toggle persists in localStorage.
+
+### ✅ W2 — Personal website wrapper (Mindscape) ✅ 2026-04-26
+
+Full interactive canvas landing page at `sebastiaandenboer.org`:
+- Smooth 2D canvas with camera lerp, pinch/zoom, particle system
+- Knowledge graph nodes driven by `featured` flag (admin-controllable)
+- Multi-level depth traversal with animated transitions
+- Inline chat with STT mic button
+- Responsive zoom for mobile
+- Hero section with bio, links, avatar
+
 ### M18 — Image support in memory palace
 - [ ] Extend `app/indexer.py` to detect `*.png / *.jpg / *.webp` in the `memory/` tree
 - [ ] For each image, call OpenAI Vision (`gpt-4o`) at index time to generate a caption; store as a chunk with `source_type: image` + `image_path` metadata
@@ -136,7 +165,7 @@ A second bot token accepting messages from *anyone*, backed by the same RAG stac
 - **Animated avatar / lip-sync** — Simli or HeyGen API; significant complexity, nice V3 demo feature
 - **Rate limit UI** — show remaining turns to user so conversation end is less abrupt
 - **Shareable conversation link** — read-only URL for a transcript (needs persistence layer)
-- **i18n** — Dutch/English toggle (Sebastiaan works bilingually)
+- **i18n** — Dutch/English toggle (Sebastiaan works bilingually) *(done — see W1)*
 - **Notebook conflict resolution V2** — diff modal when offline edits conflict with server version (D3.5 V1 is last-write-wins)
 
 ## Open questions

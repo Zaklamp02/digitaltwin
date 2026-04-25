@@ -834,6 +834,25 @@ async def update_node(
     return {"ok": True, "id": node.id, "updated_at": node.updated_at}
 
 
+@router.patch("/nodes/{node_id}/featured")
+async def toggle_featured(
+    node_id: str,
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict[str, Any]:
+    """Toggle the 'featured' flag in node metadata."""
+    kb = _knowledge(request)
+    node = kb.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    meta = dict(node.metadata)
+    meta["featured"] = not meta.get("featured", False)
+    updated = kb.update_node(node_id, metadata=meta)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update node")
+    return {"ok": True, "featured": meta["featured"]}
+
+
 @router.delete("/nodes/{node_id}")
 async def delete_node(
     node_id: str,

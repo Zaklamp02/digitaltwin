@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-golden eval-ragas list-results show-results show-verbose show-failures diff-results up down rebuild logs
+.PHONY: test test-unit test-golden eval-ragas list-results show-results show-verbose show-failures diff-results up down rebuild logs deploy restart nas-logs
 
 # Run the standard unit test suite (no live server needed)
 test-unit:
@@ -54,3 +54,30 @@ down:
 
 logs:
 	docker compose logs -f backend
+
+# ── NAS deployment ────────────────────────────────────────────────────────────
+
+NAS_HOST  = storybrew@192.168.68.200
+NAS_PATH  = /volume1/docker/digital_twin
+
+deploy:
+	tar --no-xattrs \
+	    --exclude='.git' \
+	    --exclude='backend/__pycache__' \
+	    --exclude='backend/.venv' \
+	    --exclude='frontend/node_modules' \
+	    --exclude='chroma_db' \
+	    --exclude='data' \
+	    --exclude='logs' \
+	    --exclude='memory' \
+	    --exclude='.env' \
+	    --exclude='credentials.yaml' \
+	    -czf /tmp/digital-twin-deploy.tar.gz .
+	scp /tmp/digital-twin-deploy.tar.gz $(NAS_HOST):$(NAS_PATH)/
+	ssh -t $(NAS_HOST) "cd $(NAS_PATH) && tar -xzf digital-twin-deploy.tar.gz && rm digital-twin-deploy.tar.gz && sudo docker-compose up --build -d"
+
+restart:
+	ssh -t $(NAS_HOST) "cd $(NAS_PATH) && sudo docker-compose restart"
+
+nas-logs:
+	ssh -t $(NAS_HOST) "cd $(NAS_PATH) && sudo docker-compose logs --tail=50 -f"

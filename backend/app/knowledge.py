@@ -193,6 +193,9 @@ class KnowledgeDB:
                     value       TEXT NOT NULL,
                     updated_at  TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS deleted_seed_edges (
+                    id  TEXT PRIMARY KEY
+                );
                 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
                 CREATE INDEX IF NOT EXISTS idx_nodes_type   ON nodes(type);
@@ -406,6 +409,10 @@ class KnowledgeDB:
     def delete_edge(self, id: str) -> bool:
         with self._lock, self._conn:
             cur = self._conn.execute("DELETE FROM edges WHERE id = ?", (id,))
+            if cur.rowcount > 0 and id in _ALL_SEEDED_IDS:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO deleted_seed_edges (id) VALUES (?)", (id,)
+                )
         return cur.rowcount > 0
 
     # ── graph export ──────────────────────────────────────────────────────────
@@ -463,6 +470,7 @@ class KnowledgeDB:
                     ),
                     "tier": tiers.get(n.id, max_tier + 1),
                     "has_document": bool(n.metadata.get("file_path") or n.metadata.get("extra_files")),
+                    "featured": bool(n.metadata.get("featured")),
                 }
                 for n in nodes
             ],
@@ -756,17 +764,24 @@ def resync_seed_edges(db: "KnowledgeDB") -> None:
         existing_nodes = {
             r[0] for r in db._conn.execute("SELECT id FROM nodes").fetchall()
         }
+        tombstoned = {
+            r[0] for r in db._conn.execute("SELECT id FROM deleted_seed_edges").fetchall()
+        }
         valid = [
             (eid, src, tgt, etype, label, json.dumps(["public"]), now)
             for src, tgt, etype, label, eid in _SEED_EDGES
             if src in existing_nodes and tgt in existing_nodes
+            and eid not in tombstoned
         ]
-        placeholders = ",".join("?" * len(_ALL_SEEDED_IDS))
+        # Only remove+reinsert seed edges that are NOT tombstoned
+        resync_ids = list(_ALL_SEEDED_IDS - tombstoned)
+        placeholders = ",".join("?" * len(resync_ids))
         with db._conn:
-            db._conn.execute(
-                f"DELETE FROM edges WHERE id IN ({placeholders})",  # noqa: S608
-                list(_ALL_SEEDED_IDS),
-            )
+            if resync_ids:
+                db._conn.execute(
+                    f"DELETE FROM edges WHERE id IN ({placeholders})",  # noqa: S608
+                    resync_ids,
+                )
             if valid:
                 db._conn.executemany(
                     "INSERT OR IGNORE INTO edges "

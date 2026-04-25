@@ -1,7 +1,10 @@
 # Ask my agent — NAS deploy.
 #
-# `docker compose up --build -d` and browse to http://<host>:5173.
-# Expose via Cloudflare Tunnel when ready (not wired here per PRD §3).
+# Local dev:   docker compose up --build -d  → http://localhost:5173
+# Production:  traffic arrives via the CF tunnel in the StoryBrew stack
+#              through the shared cf-tunnel-net Docker network.
+
+version: '3.8'
 
 services:
   backend:
@@ -15,8 +18,8 @@ services:
       CREDENTIALS_FILE: /app/credentials.yaml
       LOG_FILE: /app/logs/requests.ndjson
       KNOWLEDGE_DB: /app/data/knowledge.db
-      # Widen CORS for the proxied frontend container + local browsing.
-      CORS_ORIGINS: "http://localhost:5173,http://localhost:4173"
+      # Widen CORS for the proxied frontend container + production domain.
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:4173,https://sebastiaandenboer.org,https://www.sebastiaandenboer.org"
     volumes:
       - ./memory:/app/memory
       - ./chroma_db:/app/chroma_db
@@ -29,17 +32,29 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    networks:
+      - digital-twin-net
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
 
-  frontend:
+  web:
     build:
       context: ./frontend
+    container_name: digital-twin-frontend
     depends_on:
       - backend
     ports:
-      - "5173:5173"
+      - "5173:80"          # local dev: localhost:5173 → nginx :80
     restart: unless-stopped
+    networks:
+      - digital-twin-net
+      - cf-tunnel-net       # shared with StoryBrew tunnel
+
+networks:
+  digital-twin-net:         # internal backend ↔ frontend
+    driver: bridge
+  cf-tunnel-net:            # shared with StoryBrew's cloudflared
+    external: true

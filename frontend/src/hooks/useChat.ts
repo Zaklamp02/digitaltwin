@@ -15,6 +15,8 @@ export interface ChatMessage {
 export interface UseChatOptions {
   /** token from URL `?t=...` */
   token: string;
+  /** Language override: "nl", "en", or null (auto). */
+  language?: string | null;
   /** Called with each new complete sentence from the assistant as it streams. */
   onSentence?: (text: string, messageId: string) => void;
   /** Called when backend emits conversation_end. */
@@ -94,7 +96,7 @@ export function useChat(opts: UseChatOptions): UseChatReturn {
             "X-Access-Token": opts.token,
             ...(sessionId ? { "X-Session-Id": sessionId } : {}),
           },
-          body: JSON.stringify({ messages: history }),
+          body: JSON.stringify({ messages: history, language: opts.language ?? null }),
         });
 
         if (!res.ok) {

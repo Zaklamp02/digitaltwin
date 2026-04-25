@@ -36,6 +36,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    language: str | None = None  # "nl" or "en"; default = None (auto)
 
 
 async def _sse_stream(
@@ -80,6 +81,12 @@ async def _sse_stream(
         system_text = request.app.state.knowledge.get_system_prompt() or ""
         context = retriever.context_block(chunks)
         full_system = system_text + ("\n\n" + context if context else "")
+
+        # Language instruction — appended last so it takes precedence.
+        if body.language == "nl":
+            full_system += "\n\nIMPORTANT: Always respond in Dutch (Nederlands), regardless of the language of your source material or the user's message."
+        elif body.language == "en":
+            full_system += "\n\nIMPORTANT: Always respond in English, regardless of the language of your source material or the user's message."
 
         history = [Message(role=m.role, content=m.content) for m in body.messages]
 
@@ -282,3 +289,12 @@ async def content_config(request: Request) -> dict:
     chips_raw = kb.get_setting("suggestion_chips", None)
     chips = json.loads(chips_raw) if chips_raw else _DEFAULT_CHIPS
     return {"welcome_message": welcome, "chips": chips}
+
+
+@router.get("/api/graph")
+async def public_graph(request: Request, caller: Caller = Depends(caller_dep)):
+    """Public-facing graph — filtered by the caller's roles."""
+    if not hasattr(request.app.state, "knowledge"):
+        return {"nodes": [], "edges": []}
+    kb = request.app.state.knowledge
+    return kb.get_graph(caller_roles=caller.roles)

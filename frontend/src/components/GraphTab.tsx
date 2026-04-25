@@ -69,6 +69,13 @@ const TYPE_FILL: Record<string, string> = {
   notebook:  "#eab308",
 };
 
+const ROLE_COLORS: Record<string, string> = {
+  public:   "#22c55e",
+  work:     "#3b82f6",
+  friends:  "#f97316",
+  personal: "#ec4899",
+};
+
 const TYPE_ABBR: Record<string, string> = {
   person:    "👤",
   job:       "💼",
@@ -98,13 +105,14 @@ const NB_CONTAINMENT_TYPES = new Set(["nb_page", "includes", "has", "member_of",
 
 const NODE_R_BASE = 14;
 const TIER_RADII  = [0, 120, 220, 330, 430];
-const SIM_TICKS   = 500;
-const REPULSION   = 2200;
+const SIM_TICKS   = 800;
+const REPULSION   = 4000;
 const SPRING_K    = 0.022;
-const TARGET_DIST = 110;
+const TARGET_DIST = 130;
 const RADIAL_K    = 0.09;
 const DAMPING     = 0.72;
-const LERP        = 0.14;
+const LERP        = 0.12;
+const MIN_SEP     = (NODE_R_BASE + 8) * 2 + 28; // minimum centre-to-centre distance
 
 // ── tier-based initial placement ─────────────────────────────────────────────
 
@@ -150,9 +158,16 @@ function runSimulation(
         const dy = nodes[i].y - nodes[j].y;
         const d2 = dx * dx + dy * dy + 1;
         const d  = Math.sqrt(d2);
+        // Long-range repulsion
         const f  = REPULSION / d2;
         ax[i] += f * dx / d; ay[i] += f * dy / d;
         ax[j] -= f * dx / d; ay[j] -= f * dy / d;
+        // Short-range collision avoidance: hard push when closer than MIN_SEP
+        if (d < MIN_SEP) {
+          const push = (MIN_SEP - d) * 0.5 / d;
+          ax[i] += push * dx; ay[i] += push * dy;
+          ax[j] -= push * dx; ay[j] -= push * dy;
+        }
       }
     }
 
@@ -195,56 +210,6 @@ function buildSimTargets(nodes: SimNode[]): Map<string, Pos> {
     m.set(n.id, { x: n.x, y: n.y, r: NODE_R_BASE + Math.min(n.edge_count, 8), opacity: 1 });
   }
   return m;
-}
-
-function computeFocusTargets(
-  selectedId: string,
-  nodes: SimNode[],
-  edges: GraphEdge[],
-  w: number,
-  h: number,
-): Map<string, Pos> {
-  const cx = w / 2;
-  const cy = h / 2;
-  const maxR = Math.min(w * 0.86, h * 0.80) / 2;
-
-  const hop = new Map<string, number>([[selectedId, 0]]);
-  let frontier = [selectedId];
-  for (let depth = 1; depth <= 2; depth++) {
-    const next: string[] = [];
-    for (const id of frontier) {
-      for (const e of edges) {
-        const nbr = e.source === id ? e.target : e.target === id ? e.source : null;
-        if (nbr && !hop.has(nbr)) { hop.set(nbr, depth); next.push(nbr); }
-      }
-    }
-    frontier = next;
-  }
-
-  const h1 = [...hop.entries()].filter(([, d]) => d === 1).map(([id]) => id);
-  const h2 = [...hop.entries()].filter(([, d]) => d === 2).map(([id]) => id);
-
-  const result = new Map<string, Pos>();
-  result.set(selectedId, { x: cx, y: cy, r: 30, opacity: 1 });
-
-  const r1 = maxR * 0.44;
-  h1.forEach((id, i) => {
-    const angle = (2 * Math.PI * i) / Math.max(h1.length, 1) - Math.PI / 2;
-    result.set(id, { x: cx + r1 * Math.cos(angle), y: cy + r1 * Math.sin(angle), r: 20, opacity: 1 });
-  });
-
-  const r2 = maxR * 0.90;
-  h2.forEach((id, i) => {
-    const angle = (2 * Math.PI * i) / Math.max(h2.length, 1) - Math.PI / 2;
-    result.set(id, { x: cx + r2 * Math.cos(angle), y: cy + r2 * Math.sin(angle), r: 14, opacity: 0.85 });
-  });
-
-  for (const n of nodes) {
-    if (!result.has(n.id)) {
-      result.set(n.id, { x: n.x, y: n.y, r: 9, opacity: 0.12 });
-    }
-  }
-  return result;
 }
 
 let _graphToken = "";
@@ -704,6 +669,7 @@ export default function GraphTab({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [nbDepths, setNbDepths]     = useState<Map<string, number>>(new Map());
   const [showOrphanPanel, setShowOrphanPanel] = useState(false);
+  const [roleFilter, setRoleFilter] = useState("all");
 
   function toggleCollapse(nodeId: string) {
     setCollapsed(prev => {
@@ -726,7 +692,7 @@ export default function GraphTab({
         const ny  = cur.y + (tgt.y - cur.y) * LERP;
         const nr  = cur.r + (tgt.r - cur.r) * LERP;
         const no  = cur.opacity + (tgt.opacity - cur.opacity) * LERP;
-        if (Math.abs(nx - tgt.x) > 0.3 || Math.abs(ny - tgt.y) > 0.3) moving = true;
+        if (Math.abs(nx - tgt.x) > 0.3 || Math.abs(ny - tgt.y) > 0.3 || Math.abs(no - tgt.opacity) > 0.01) moving = true;
         displayRef.current.set(id, { x: nx, y: ny, r: nr, opacity: no });
       }
       setTick(t => t + 1);
@@ -791,8 +757,8 @@ export default function GraphTab({
             if (!depths.has(child)) bfsQueue.push([child, d + 1]);
           }
         }
-        // Collapse everything at depth >= 2 by default
-        setCollapsed(new Set([...depths.entries()].filter(([, d]) => d >= 2).map(([id]) => id)));
+        // Collapse all parent nodes by default so the graph starts fully folded
+        setCollapsed(new Set(childrenForDepth.keys()));
         setNbDepths(depths);
       })
       .catch(e => setErr(e.message))
@@ -805,14 +771,31 @@ export default function GraphTab({
 
   useEffect(() => {
     if (!simRef.current.length) return;
-    const { w, h } = dimensions;
     if (selected) {
-      targetRef.current = computeFocusTargets(selected.id, simRef.current, edgesRef.current, w, h);
+      // Only dim/highlight by opacity — positions stay fixed so the layout never jumps
+      const hop = new Map<string, number>([[selected.id, 0]]);
+      let frontier = [selected.id];
+      for (let depth = 1; depth <= 2; depth++) {
+        const next: string[] = [];
+        for (const id of frontier) {
+          for (const e of edgesRef.current) {
+            const nbr = e.source === id ? e.target : e.target === id ? e.source : null;
+            if (nbr && !hop.has(nbr)) { hop.set(nbr, depth); next.push(nbr); }
+          }
+        }
+        frontier = next;
+      }
+      for (const n of simRef.current) {
+        const depth = hop.get(n.id);
+        const opacity = depth !== undefined ? (depth <= 1 ? 1 : depth === 2 ? 0.7 : 0.15) : 0.15;
+        const r = NODE_R_BASE + Math.min(n.edge_count, 8);
+        targetRef.current.set(n.id, { x: n.x, y: n.y, r, opacity });
+      }
     } else {
       targetRef.current = buildSimTargets(simRef.current);
     }
     startAnim();
-  }, [selected, dimensions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── fetch node body + edges when selection changes ───────────────────────
 
@@ -960,6 +943,7 @@ export default function GraphTab({
 
   const inFocusMode = selected !== null;
   const allTypes    = [...new Set(simRef.current.map(n => n.type))].sort();
+  const allRoles    = [...new Set(simRef.current.flatMap(n => n.roles))].sort();
 
   // ── containment tree (all nodes, proper parent-child direction) ───────────
   const containmentChildrenMap = new Map<string, Set<string>>();
@@ -1019,12 +1003,21 @@ export default function GraphTab({
   );
   const orphanCount = orphanNodes.length;
 
+  // When a role filter is active, bypass fold-hiding so all matching nodes
+  // are visible regardless of whether their parent is collapsed.
   const visibleNodes = simRef.current.filter(n =>
     (typeFilter === "all" || n.type === typeFilter) &&
-    !foldedNodeIds.has(n.id)
+    (roleFilter === "all" || n.roles.includes(roleFilter)) &&
+    (!foldedNodeIds.has(n.id) || roleFilter !== "all")
   );
 
+  const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+
   const visibleEdges = edgesRef.current.filter(e => {
+    // When a role filter is active, show an edge iff both endpoints are visible
+    if (roleFilter !== "all") {
+      return visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target);
+    }
     // hide edges to/from folded nodes
     if (foldedNodeIds.has(e.source) || foldedNodeIds.has(e.target)) return false;
     if (typeFilter !== "all") {
@@ -1061,11 +1054,37 @@ export default function GraphTab({
         >↺ Reload</button>
         <div className="h-4 border-r border-gray-200" />
 
+        {/* Role / access filters */}
+        <button
+          onClick={() => setRoleFilter("all")}
+          className={`text-xs px-2 py-0.5 rounded-full ${roleFilter === "all" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+        >All access</button>
+        {allRoles.map(r => (
+          <button
+            key={r}
+            onClick={() => { setRoleFilter(r === roleFilter ? "all" : r); setSelected(null); }}
+            className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 transition-all"
+            style={{
+              backgroundColor: roleFilter === r ? (ROLE_COLORS[r] ?? "#6366f1") : "#f3f4f6",
+              color: roleFilter === r ? "white" : "#374151",
+            }}
+            title={`Show only "${r}" nodes`}
+          >
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ backgroundColor: roleFilter === r ? "rgba(255,255,255,0.75)" : (ROLE_COLORS[r] ?? "#6366f1") }}
+            />
+            {r}
+          </button>
+        ))}
+
+        <div className="h-4 border-r border-gray-200" />
+
         {/* Type filters — color dot always visible → doubles as the legend */}
         <button
           onClick={() => setTypeFilter("all")}
           className={`text-xs px-2 py-0.5 rounded-full ${typeFilter === "all" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-        >All</button>
+        >All types</button>
         {allTypes.map(t => (
           <button
             key={t}

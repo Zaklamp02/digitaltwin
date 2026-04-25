@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Concept D — "The Mindscape"</title>
+<!--
+  CONCEPT D: THE MINDSCAPE
+  =========================
+  Merges Concept A (clean light layout, scroll-to-content) with an improved
+  Concept B constellation that looks like a mind palace / neural network.
+
+  - Light mode, clean typography
+  - Canvas background: organic node clusters with labels, curved edges,
+    hover glow, cursor interaction
+  - Nodes are clickable → smooth zoom/pan into that cluster,
+    child nodes expand, chat opens with a conversation starter
+  - Below the fold: normal website (projects, curiosa, footer)
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #fbfbf9;
+    --ink: #0f172a;
+    --ink-70: rgba(15, 23, 42, 0.7);
+    --ink-50: rgba(15, 23, 42, 0.5);
+    --ink-20: rgba(15, 23, 42, 0.2);
+    --ink-08: rgba(15, 23, 42, 0.06);
+    --accent: #0F766E;
+    --accent-rgb: 15, 118, 110;
+    --accent-light: rgba(15, 118, 110, 0.08);
+    --accent-mid: rgba(15, 118, 110, 0.25);
+    --node-bg: rgba(15, 118, 110, 0.06);
+    --node-border: rgba(15, 118, 110, 0.18);
+    --edge-color: rgba(15, 118, 110, 0.07);
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* ── HERO ────────────────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2rem;
+    overflow: hidden;
+  }
+
+  canvas#mindscape {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    cursor: default;
+  }
+
+  .hero-top {
+    position: relative;
+    z-index: 2;
+    padding-top: 18vh;
+  }
+
+  .hero-name {
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+  }
+
+  .hero-sub {
+    margin-top: 0.75rem;
+    font-size: clamp(0.85rem, 1.4vw, 1.05rem);
+    font-weight: 400;
+    color: var(--ink-50);
+    max-width: 440px;
+    line-height: 1.55;
+  }
+
+  .hero-links {
+    display: flex;
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+  }
+
+  .hero-links a {
+    font-size: 0.8rem;
+    color: var(--ink-50);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .hero-links a:hover { color: var(--accent); }
+
+  /* ── PROMPT BAR ─────────────────────────────────────────────── */
+  .prompt-area {
+    position: relative;
+    z-index: 2;
+    padding-bottom: 1rem;
+  }
+
+  .prompt-label {
+    font-size: 0.7rem;
+    color: var(--ink-20);
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .prompt-input-wrap {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--ink-20);
+    border-radius: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(251, 251, 249, 0.85);
+    backdrop-filter: blur(12px);
+    transition: border-color 0.3s, box-shadow 0.3s;
+    max-width: 560px;
+  }
+
+  .prompt-input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-light);
+  }
+
+  .prompt-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 1rem;
+    color: var(--ink);
+    background: transparent;
+  }
+
+  .prompt-input::placeholder { color: var(--ink-20); }
+
+  .prompt-send {
+    background: var(--accent);
+    border: none;
+    color: white;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.3;
+    transition: opacity 0.2s, transform 0.15s;
+    flex-shrink: 0;
+  }
+
+  .prompt-send.active { opacity: 1; }
+  .prompt-send:hover { transform: scale(1.05); }
+
+  /* Scroll hint */
+  .scroll-hint {
+    position: absolute;
+    bottom: 6rem;
+    right: 2rem;
+    font-size: 0.65rem;
+    color: var(--ink-20);
+    writing-mode: vertical-rl;
+    letter-spacing: 0.1em;
+    z-index: 2;
+    animation: fade-pulse 3s ease-in-out infinite;
+  }
+
+  @keyframes fade-pulse {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 0.7; }
+  }
+
+  /* ── NODE TOOLTIP (shows on hover) ──────────────────────────── */
+  .node-tooltip {
+    position: fixed;
+    z-index: 10;
+    background: rgba(251, 251, 249, 0.92);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--node-border);
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--accent);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.2s, transform 0.2s;
+    white-space: nowrap;
+  }
+
+  .node-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .node-tooltip .tip-hint {
+    font-weight: 400;
+    color: var(--ink-20);
+    font-size: 0.6rem;
+    margin-top: 0.15rem;
+  }
+
+  /* ── CHAT OVERLAY (slides up when node clicked) ─────────────── */
+  .chat-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    transform: translateY(100%);
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .chat-overlay.open {
+    transform: translateY(0);
+  }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--ink-08);
+  }
+
+  .chat-back {
+    background: none;
+    border: 1px solid var(--ink-08);
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.65rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+    color: var(--ink-50);
+    transition: border-color 0.2s;
+  }
+
+  .chat-back:hover { border-color: var(--accent); color: var(--accent); }
+
+  .chat-topic-badge {
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-light);
+    padding: 0.2rem 0.6rem;
+    border-radius: 1rem;
+  }
+
+  .chat-messages {
+    flex: 1;
+    max-width: 680px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    overflow-y: auto;
+  }
+
+  .chat-bubble {
+    max-width: 85%;
+    padding: 0.75rem 1rem;
+    border-radius: 1rem;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    margin-bottom: 0.75rem;
+    animation: bubbleIn 0.4s ease-out both;
+  }
+
+  @keyframes bubbleIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .chat-bubble.twin {
+    background: var(--accent-light);
+    color: var(--ink);
+    border-bottom-left-radius: 0.25rem;
+  }
+
+  .chat-bubble.twin .twin-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 0.3rem;
+  }
+
+  .chat-input-area {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--ink-08);
+    max-width: 680px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .chat-input-wrap {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--ink-20);
+    border-radius: 1rem;
+    padding: 0.65rem 1rem;
+    background: white;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+
+  .chat-input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-light);
+  }
+
+  .chat-input-field {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--ink);
+    background: transparent;
+  }
+
+  .chat-input-field::placeholder { color: var(--ink-20); }
+
+  /* ── SECTIONS BELOW THE FOLD ────────────────────────────────── */
+  .section {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4rem 2rem;
+  }
+
+  .section-title {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-20);
+    margin-bottom: 2rem;
+  }
+
+  .projects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .project-card {
+    border: 1px solid var(--ink-08);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .project-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 12px rgba(15, 118, 110, 0.08);
+  }
+
+  .project-card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .project-card .tag { font-size: 0.7rem; color: var(--accent); margin-bottom: 0.5rem; }
+  .project-card p { font-size: 0.8rem; color: var(--ink-50); line-height: 1.5; }
+
+  .curiosa-item {
+    border-bottom: 1px solid var(--ink-08);
+    padding: 1.25rem 0;
+  }
+
+  .curiosa-item:last-child { border-bottom: none; }
+  .curiosa-date { font-size: 0.7rem; color: var(--ink-20); }
+  .curiosa-title { font-size: 0.95rem; font-weight: 600; margin-top: 0.25rem; }
+  .curiosa-excerpt { font-size: 0.8rem; color: var(--ink-50); margin-top: 0.35rem; line-height: 1.5; }
+
+  .curiosa-tags { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .curiosa-tags span {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 1rem;
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  .see-all {
+    display: inline-block;
+    margin-top: 1.5rem;
+    font-size: 0.8rem;
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .see-all:hover { text-decoration: underline; }
+
+  .footer {
+    text-align: center;
+    padding: 3rem 2rem;
+    font-size: 0.7rem;
+    color: var(--ink-20);
+  }
+</style>
+</head>
+<body>
+
+<!-- ── HERO ────────────────────────────────────────────────────────── -->
+<div class="hero">
+  <canvas id="mindscape"></canvas>
+
+  <div class="hero-top">
+    <h1 class="hero-name">Sebastiaan<br>den Boer</h1>
+    <p class="hero-sub">
+      I build AI systems that make high-stakes decisions better.
+      Director of Data Science & AI. Nerd with MBA.
+    </p>
+    <div class="hero-links">
+      <a href="#">LinkedIn</a>
+      <a href="#">GitHub</a>
+      <a href="#">Email</a>
+      <a href="#">CV ↓</a>
+    </div>
+  </div>
+
+  <div class="prompt-area">
+    <div class="prompt-label">Ask my digital twin anything</div>
+    <div class="prompt-input-wrap">
+      <input class="prompt-input" type="text" placeholder="What's your experience with AI agents?" id="promptInput">
+      <button class="prompt-send" id="promptSend" aria-label="Send">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <span class="scroll-hint">scroll for more</span>
+</div>
+
+<!-- Node tooltip -->
+<div class="node-tooltip" id="nodeTooltip">
+  <div class="tip-label" id="tipLabel"></div>
+  <div class="tip-hint">click to explore</div>
+</div>
+
+<!-- ── CHAT OVERLAY ───────────────────────────────────────────────── -->
+<div class="chat-overlay" id="chatOverlay">
+  <div class="chat-header">
+    <button class="chat-back" id="chatBack">← Back</button>
+    <span class="chat-topic-badge" id="chatTopicBadge"></span>
+  </div>
+  <div class="chat-messages" id="chatMessages"></div>
+  <div class="chat-input-area">
+    <div class="chat-input-wrap">
+      <input class="chat-input-field" type="text" placeholder="Continue the conversation..." id="chatInput">
+    </div>
+  </div>
+</div>
+
+<!-- ── PROJECTS ────────────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">Projects</div>
+  <div class="projects-grid">
+    <a href="#" class="project-card">
+      <h3>StoryBrew</h3>
+      <div class="tag">Web app · dromenbrouwer.nl</div>
+      <p>AI-powered interactive story platform. Generative AI meets narrative design.</p>
+    </a>
+    <a href="#" class="project-card">
+      <h3>Digital Twin</h3>
+      <div class="tag">This site · FastAPI + React</div>
+      <p>RAG-powered AI agent with knowledge graph, multi-tier access, and Telegram.</p>
+    </a>
+    <a href="#" class="project-card">
+      <h3>RealLifeRisk</h3>
+      <div class="tag">R/Shiny · Board game</div>
+      <p>Companion app for a physical strategy game. Move validation over local WiFi.</p>
+    </a>
+    <a href="#" class="project-card">
+      <h3>Woodworking</h3>
+      <div class="tag">Physical · Ongoing</div>
+      <p>Built a full kitchen from scratch. Currently: bespoke cabinet with reading nook.</p>
+    </a>
+  </div>
+</div>
+
+<!-- ── CURIOSA ─────────────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">The Curiosa</div>
+  <div class="curiosa-item">
+    <div class="curiosa-date">25 Apr 2026</div>
+    <div class="curiosa-title">Docker DNS aliases can silently hijack your other services</div>
+    <div class="curiosa-excerpt">Found out the hard way: if two Docker Compose stacks share a network and both have a service named "frontend", the tunnel picks whichever it finds first...</div>
+    <div class="curiosa-tags"><span>TIL</span><span>Docker</span></div>
+  </div>
+  <div class="curiosa-item">
+    <div class="curiosa-date">22 Apr 2026</div>
+    <div class="curiosa-title">Why I built my own digital twin instead of using a template</div>
+    <div class="curiosa-excerpt">Every AI chatbot builder promises "your personal assistant in 5 minutes." Here's why I spent weeks building mine from scratch instead...</div>
+    <div class="curiosa-tags"><span>AI</span><span>Projects</span></div>
+  </div>
+  <a href="#" class="see-all">See all posts →</a>
+</div>
+
+<div class="footer">© 2026 Sebastiaan den Boer · Built with too many Docker containers</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     MINDSCAPE ENGINE
+     ══════════════════════════════════════════════════════════════ -->
+<script>
+// ── KNOWLEDGE GRAPH DATA ────────────────────────────────────────────
+// Each node has a position (relative 0-1), children, and a chat opener.
+const GRAPH = [
+  {
+    id: 'ai', label: 'AI & ML',
+    x: 0.72, y: 0.22, r: 22,
+    children: [
+      { id: 'llm', label: 'LLMs', dx: -55, dy: -35, r: 10 },
+      { id: 'rag', label: 'RAG', dx: 45, dy: -25, r: 10 },
+      { id: 'agents', label: 'Agents', dx: 55, dy: 20, r: 10 },
+      { id: 'nlp', label: 'NLP', dx: -45, dy: 30, r: 9 },
+    ],
+    chatOpener: "You clicked on AI & ML — that's really where I live. I lead AI strategy at scale and build things like this digital twin. What would you like to know? My views on LLMs in production? How I think about AI agents? The RAG architecture behind this site?",
+  },
+  {
+    id: 'career', label: 'Career',
+    x: 0.82, y: 0.52, r: 20,
+    children: [
+      { id: 'leadership', label: 'Leadership', dx: 50, dy: -20, r: 10 },
+      { id: 'strategy', label: 'Strategy', dx: 45, dy: 25, r: 9 },
+      { id: 'mba', label: 'MBA', dx: -40, dy: 35, r: 9 },
+    ],
+    chatOpener: "Career — happy to go there. I've gone from hands-on data science to directing AI strategy for large organisations. The MBA was a deliberate choice to bridge tech and business. What angle interests you — the leadership journey, the technical path, or something specific?",
+  },
+  {
+    id: 'projects', label: 'Projects',
+    x: 0.60, y: 0.65, r: 20,
+    children: [
+      { id: 'storybrew', label: 'StoryBrew', dx: -50, dy: -25, r: 10 },
+      { id: 'twin', label: 'Digital Twin', dx: 50, dy: -20, r: 10 },
+      { id: 'risk', label: 'RealLifeRisk', dx: -40, dy: 30, r: 9 },
+    ],
+    chatOpener: "Projects! I always have a few going. StoryBrew is an AI storytelling platform, this Digital Twin is my personal RAG agent, and RealLifeRisk is a board game companion app. Which one catches your eye?",
+  },
+  {
+    id: 'woodworking', label: 'Woodworking',
+    x: 0.35, y: 0.72, r: 18,
+    children: [
+      { id: 'kitchen', label: 'Kitchen build', dx: -45, dy: -20, r: 9 },
+      { id: 'furniture', label: 'Furniture', dx: 40, dy: -20, r: 9 },
+      { id: 'tools', label: 'Tools', dx: 0, dy: 35, r: 8 },
+    ],
+    chatOpener: "Ah, woodworking — my zen mode. I built our entire kitchen from scratch (cabinets, counters, everything) and I'm currently working on a bespoke reading nook. Want to hear about the process, the tools, or the many mistakes I've learned from?",
+  },
+  {
+    id: 'values', label: 'Values',
+    x: 0.20, y: 0.35, r: 18,
+    children: [
+      { id: 'craft', label: 'Craftsmanship', dx: -50, dy: -15, r: 9 },
+      { id: 'curiosity', label: 'Curiosity', dx: -35, dy: 30, r: 9 },
+      { id: 'honesty', label: 'Honesty', dx: 40, dy: 25, r: 8 },
+    ],
+    chatOpener: "Values — good topic. I care deeply about craftsmanship (in code and in wood), intellectual curiosity, and radical honesty. These aren't just words on a wall — they drive how I lead teams and build things. What resonates with you?",
+  },
+  {
+    id: 'hobbies', label: 'Hobbies',
+    x: 0.18, y: 0.60, r: 17,
+    children: [
+      { id: 'running', label: 'Running', dx: -40, dy: -20, r: 8 },
+      { id: 'cooking', label: 'Cooking', dx: -35, dy: 25, r: 8 },
+      { id: 'boardgames', label: 'Board games', dx: 45, dy: 15, r: 9 },
+    ],
+    chatOpener: "Beyond work, I run (slowly), cook (enthusiastically), and play too many board games. I once designed my own strategy game and built an app for it. Ask me about any of these — or challenge me on my running pace.",
+  },
+  {
+    id: 'data', label: 'Data',
+    x: 0.50, y: 0.30, r: 17,
+    children: [
+      { id: 'eng', label: 'Engineering', dx: -40, dy: -25, r: 9 },
+      { id: 'viz', label: 'Visualisation', dx: 40, dy: -20, r: 9 },
+      { id: 'infra', label: 'Infra', dx: 35, dy: 25, r: 8 },
+    ],
+    chatOpener: "Data — it's the foundation. I've built data platforms on Spark, Snowflake, BigQuery, and more. From messy ETL to clean dashboards, I've seen it all. What's your question — architecture, tooling, team structure, or war stories?",
+  },
+];
+
+// Connections between main nodes (index pairs)
+const EDGES = [
+  [0, 1], // AI - Career
+  [0, 2], // AI - Projects
+  [0, 6], // AI - Data
+  [1, 4], // Career - Values
+  [2, 3], // Projects - Woodworking
+  [2, 5], // Projects - Hobbies
+  [3, 5], // Woodworking - Hobbies
+  [4, 5], // Values - Hobbies
+  [1, 6], // Career - Data
+  [4, 0], // Values - AI
+];
+
+
+// ── CANVAS SETUP ────────────────────────────────────────────────────
+const canvas = document.getElementById('mindscape');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+let mouse = { x: -9999, y: -9999 };
+let hoveredNode = null;
+let animationState = 'idle'; // idle | zooming | zoomed
+let zoomTarget = null;
+let zoomProgress = 0;
+let zoomFrom = { cx: 0, cy: 0, scale: 1 };
+let zoomTo = { cx: 0, cy: 0, scale: 1 };
+let currentView = { cx: 0, cy: 0, scale: 1 };
+let expandedChildren = []; // children of clicked node, animated in
+let childAnimProgress = 0;
+let time = 0;
+
+// Organic drift offsets per node
+const drifts = GRAPH.map(() => ({
+  phase: Math.random() * Math.PI * 2,
+  ampX: 3 + Math.random() * 5,
+  ampY: 3 + Math.random() * 5,
+  freqX: 0.3 + Math.random() * 0.4,
+  freqY: 0.3 + Math.random() * 0.4,
+}));
+
+// Tiny particle layer (ambient)
+const particles = Array.from({ length: 60 }, () => ({
+  x: Math.random(),
+  y: Math.random(),
+  vx: (Math.random() - 0.5) * 0.00015,
+  vy: (Math.random() - 0.5) * 0.00015,
+  r: 1 + Math.random() * 1.5,
+  alpha: 0.04 + Math.random() * 0.08,
+}));
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = canvas.clientWidth;
+  H = canvas.clientHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  currentView.cx = W / 2;
+  currentView.cy = H / 2;
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+
+// ── COORDINATE HELPERS ──────────────────────────────────────────────
+function nodeScreenPos(node) {
+  const bx = node.x * W;
+  const by = node.y * H;
+  const d = drifts[GRAPH.indexOf(node)] || drifts[0];
+  const dx = Math.sin(time * d.freqX + d.phase) * d.ampX;
+  const dy = Math.cos(time * d.freqY + d.phase * 1.3) * d.ampY;
+  return { x: bx + dx, y: by + dy };
+}
+
+function screenToCanvas(sx, sy) {
+  // In zoomed view, transform screen coords
+  return { x: sx, y: sy };
+}
+
+
+// ── DRAWING ─────────────────────────────────────────────────────────
+function drawParticles() {
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.x < 0 || p.x > 1) p.vx *= -1;
+    if (p.y < 0 || p.y > 1) p.vy *= -1;
+
+    const sx = p.x * W;
+    const sy = p.y * H;
+    // Mouse proximity glow
+    const dm = Math.hypot(sx - mouse.x, sy - mouse.y);
+    const glow = dm < 180 ? (180 - dm) / 180 * 0.12 : 0;
+
+    ctx.beginPath();
+    ctx.arc(sx, sy, p.r + glow * 3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15}, ${118}, ${110}, ${p.alpha + glow})`;
+    ctx.fill();
+  });
+}
+
+function drawEdges() {
+  EDGES.forEach(([i, j]) => {
+    const a = nodeScreenPos(GRAPH[i]);
+    const b = nodeScreenPos(GRAPH[j]);
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+
+    // Mouse proximity: brighten edges near cursor
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2;
+    const dm = Math.hypot(midX - mouse.x, midY - mouse.y);
+    const proximity = dm < 200 ? (200 - dm) / 200 : 0;
+    const alpha = 0.06 + proximity * 0.12;
+
+    // Draw curved edge (slight arc for organic feel)
+    const cpx = midX + (a.y - b.y) * 0.1;
+    const cpy = midY - (a.x - b.x) * 0.1;
+
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(cpx, cpy, b.x, b.y);
+    ctx.strokeStyle = `rgba(${15}, ${118}, ${110}, ${alpha})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+}
+
+function drawNodes() {
+  hoveredNode = null;
+
+  GRAPH.forEach((node, i) => {
+    const pos = nodeScreenPos(node);
+    const dm = Math.hypot(pos.x - mouse.x, pos.y - mouse.y);
+    const isHover = dm < node.r + 15;
+    if (isHover) hoveredNode = node;
+
+    const glowAmount = isHover ? 1 : Math.max(0, 1 - dm / 250) * 0.3;
+
+    // Outer glow ring
+    if (glowAmount > 0.05) {
+      const gradient = ctx.createRadialGradient(pos.x, pos.y, node.r, pos.x, pos.y, node.r + 25 * glowAmount);
+      gradient.addColorStop(0, `rgba(${15}, ${118}, ${110}, ${0.08 * glowAmount})`);
+      gradient.addColorStop(1, `rgba(${15}, ${118}, ${110}, 0)`);
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, node.r + 25 * glowAmount, 0, Math.PI * 2);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+
+    // Node circle
+    const fillAlpha = 0.04 + glowAmount * 0.08;
+    const borderAlpha = 0.15 + glowAmount * 0.35;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, node.r + (isHover ? 3 : 0), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15}, ${118}, ${110}, ${fillAlpha})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${15}, ${118}, ${110}, ${borderAlpha})`;
+    ctx.lineWidth = isHover ? 1.5 : 0.8;
+    ctx.stroke();
+
+    // Inner dot
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 2.5 + glowAmount * 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15}, ${118}, ${110}, ${0.3 + glowAmount * 0.5})`;
+    ctx.fill();
+
+    // Label
+    const labelAlpha = 0.2 + glowAmount * 0.6;
+    ctx.font = `${isHover ? '500' : '400'} ${isHover ? '11px' : '10px'} Inter, sans-serif`;
+    ctx.fillStyle = `rgba(${15}, ${118}, ${110}, ${labelAlpha})`;
+    ctx.textAlign = 'center';
+    ctx.fillText(node.label, pos.x, pos.y + node.r + 16);
+  });
+}
+
+function drawExpandedChildren() {
+  if (expandedChildren.length === 0 || childAnimProgress <= 0) return;
+
+  const parent = zoomTarget;
+  const parentPos = nodeScreenPos(parent);
+  const ease = childAnimProgress;
+
+  parent.children.forEach((child, ci) => {
+    const cx = parentPos.x + child.dx * 2.5 * ease;
+    const cy = parentPos.y + child.dy * 2.5 * ease;
+    const cr = child.r * ease;
+    const alpha = ease * 0.6;
+
+    // Edge to parent
+    ctx.beginPath();
+    ctx.moveTo(parentPos.x, parentPos.y);
+    ctx.lineTo(cx, cy);
+    ctx.strokeStyle = `rgba(${15}, ${118}, ${110}, ${0.1 * ease})`;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Child node
+    ctx.beginPath();
+    ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${15}, ${118}, ${110}, ${0.06 * ease})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${15}, ${118}, ${110}, ${0.25 * ease})`;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Child label
+    ctx.font = `400 9px Inter, sans-serif`;
+    ctx.fillStyle = `rgba(${15}, ${118}, ${110}, ${alpha})`;
+    ctx.textAlign = 'center';
+    ctx.fillText(child.label, cx, cy + cr + 12);
+  });
+}
+
+
+// ── TOOLTIP ─────────────────────────────────────────────────────────
+const tooltip = document.getElementById('nodeTooltip');
+const tipLabel = document.getElementById('tipLabel');
+
+function updateTooltip() {
+  if (hoveredNode && animationState === 'idle') {
+    const pos = nodeScreenPos(hoveredNode);
+    tipLabel.textContent = hoveredNode.label;
+    tooltip.style.left = pos.x + 'px';
+    tooltip.style.top = (pos.y - hoveredNode.r - 40) + 'px';
+    tooltip.classList.add('visible');
+    canvas.style.cursor = 'pointer';
+  } else {
+    tooltip.classList.remove('visible');
+    canvas.style.cursor = 'default';
+  }
+}
+
+
+// ── CLICK → ZOOM + CHAT ────────────────────────────────────────────
+canvas.addEventListener('click', (e) => {
+  if (animationState !== 'idle' || !hoveredNode) return;
+
+  zoomTarget = hoveredNode;
+  animationState = 'zooming';
+  zoomProgress = 0;
+  expandedChildren = zoomTarget.children || [];
+  childAnimProgress = 0;
+  tooltip.classList.remove('visible');
+});
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+
+// ── CHAT OVERLAY ────────────────────────────────────────────────────
+const chatOverlay = document.getElementById('chatOverlay');
+const chatMessages = document.getElementById('chatMessages');
+const chatTopicBadge = document.getElementById('chatTopicBadge');
+const chatBack = document.getElementById('chatBack');
+const chatInput = document.getElementById('chatInput');
+
+function openChat(node) {
+  chatTopicBadge.textContent = node.label;
+  chatMessages.innerHTML = '';
+
+  // Conversation starter bubble
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble twin';
+  bubble.innerHTML = `<div class="twin-label">Sebastiaan's twin</div>${node.chatOpener}`;
+  chatMessages.appendChild(bubble);
+
+  chatOverlay.classList.add('open');
+  setTimeout(() => chatInput.focus(), 600);
+}
+
+chatBack.addEventListener('click', () => {
+  chatOverlay.classList.remove('open');
+  animationState = 'idle';
+  zoomProgress = 0;
+  childAnimProgress = 0;
+  expandedChildren = [];
+  zoomTarget = null;
+});
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || !chatInput.value.trim()) return;
+  const msg = chatInput.value.trim();
+  chatInput.value = '';
+
+  // User bubble
+  const userBubble = document.createElement('div');
+  userBubble.className = 'chat-bubble user';
+  userBubble.style.marginLeft = 'auto';
+  userBubble.style.background = 'var(--ink-08)';
+  userBubble.textContent = msg;
+  chatMessages.appendChild(userBubble);
+
+  // Fake twin reply
+  setTimeout(() => {
+    const reply = document.createElement('div');
+    reply.className = 'chat-bubble twin';
+    reply.innerHTML = `<div class="twin-label">Sebastiaan's twin</div>That's a great question about ${zoomTarget ? zoomTarget.label : 'that topic'}. In the live site, this response would stream from the real digital twin API via SSE. For now, just imagine a thoughtful answer appearing word by word...`;
+    chatMessages.appendChild(reply);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }, 500);
+});
+
+
+// ── ANIMATION LOOP ──────────────────────────────────────────────────
+function animate() {
+  time += 0.016;
+  ctx.clearRect(0, 0, W, H);
+
+  // Zoom animation
+  if (animationState === 'zooming') {
+    zoomProgress = Math.min(1, zoomProgress + 0.018);
+    const t = easeInOutCubic(zoomProgress);
+
+    // Fade out non-target nodes
+    ctx.globalAlpha = 1 - t * 0.6;
+    drawParticles();
+    drawEdges();
+
+    // Draw all nodes with fading
+    GRAPH.forEach((node, i) => {
+      if (node === zoomTarget) return;
+      const pos = nodeScreenPos(node);
+      const fadeAlpha = 1 - t;
+      ctx.globalAlpha = fadeAlpha;
+
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, node.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(15, 118, 110, 0.04)`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(15, 118, 110, 0.15)`;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(15, 118, 110, 0.3)`;
+      ctx.fill();
+
+      ctx.font = '400 10px Inter, sans-serif';
+      ctx.fillStyle = `rgba(15, 118, 110, 0.2)`;
+      ctx.textAlign = 'center';
+      ctx.fillText(node.label, pos.x, pos.y + node.r + 16);
+    });
+
+    ctx.globalAlpha = 1;
+
+    // Target node: pulse / grow
+    const targetPos = nodeScreenPos(zoomTarget);
+    const growR = zoomTarget.r + t * 12;
+    const pulseAlpha = 0.1 + t * 0.15;
+
+    // Glow
+    const gradient = ctx.createRadialGradient(targetPos.x, targetPos.y, growR * 0.5, targetPos.x, targetPos.y, growR + 40);
+    gradient.addColorStop(0, `rgba(15, 118, 110, ${0.12 * (1 + t)})`);
+    gradient.addColorStop(1, `rgba(15, 118, 110, 0)`);
+    ctx.beginPath();
+    ctx.arc(targetPos.x, targetPos.y, growR + 40, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(targetPos.x, targetPos.y, growR, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(15, 118, 110, ${pulseAlpha})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(15, 118, 110, ${0.35 + t * 0.3})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(targetPos.x, targetPos.y, 3 + t * 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(15, 118, 110, ${0.5 + t * 0.4})`;
+    ctx.fill();
+
+    ctx.font = `500 ${11 + t * 3}px Inter, sans-serif`;
+    ctx.fillStyle = `rgba(15, 118, 110, ${0.5 + t * 0.5})`;
+    ctx.textAlign = 'center';
+    ctx.fillText(zoomTarget.label, targetPos.x, targetPos.y + growR + 20);
+
+    // Expand children
+    childAnimProgress = Math.max(0, (zoomProgress - 0.3) / 0.7);
+    drawExpandedChildren();
+
+    // Open chat when zoom finishes
+    if (zoomProgress >= 1) {
+      animationState = 'zoomed';
+      setTimeout(() => openChat(zoomTarget), 200);
+    }
+  } else {
+    // Normal idle rendering
+    drawParticles();
+    drawEdges();
+    drawNodes();
+  }
+
+  updateTooltip();
+  requestAnimationFrame(animate);
+}
+
+// ── MOUSE TRACKING ──────────────────────────────────────────────────
+window.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = -9999;
+  mouse.y = -9999;
+});
+
+
+// ── PROMPT INPUT ────────────────────────────────────────────────────
+const promptInput = document.getElementById('promptInput');
+const promptSend = document.getElementById('promptSend');
+
+promptInput.addEventListener('input', () => {
+  promptSend.classList.toggle('active', promptInput.value.trim().length > 0);
+});
+
+function sendPrompt() {
+  if (!promptInput.value.trim()) return;
+  // In real app: navigate to /chat with message
+  // For prototype: open chat overlay
+  zoomTarget = GRAPH[0]; // default to AI topic
+  openChat({
+    label: 'Free question',
+    chatOpener: `You asked: "${promptInput.value.trim()}" — great question! In the live site, my digital twin would answer this using RAG retrieval over my knowledge base. The response would stream in word-by-word via SSE.`,
+    children: [],
+  });
+  chatOverlay.classList.add('open');
+  promptInput.value = '';
+  promptSend.classList.remove('active');
+}
+
+promptInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendPrompt();
+});
+promptSend.addEventListener('click', sendPrompt);
+
+
+// ── GO ──────────────────────────────────────────────────────────────
+animate();
+</script>
+
+</body>
+</html>
