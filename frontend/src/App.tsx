@@ -109,33 +109,6 @@ export default function App() {
 
 const TWIN_NAME = "Basbot";
 
-/** Rich opener messages per node id */
-const CHAT_OPENERS: Record<string, string> = {
-  career:      "Career — Sebastiaan moved from hands-on data science to directing AI strategy at scale. The executive MBA bridged the tech/business gap. What angle interests you?",
-  education:   "Education — neuroscience BSc, a brief detour through software engineering, then an executive MBA. Each step was deliberate. What would you like to know?",
-  hobbies:     "Beyond work — woodworking (built a full kitchen from scratch!), running (slowly but consistently), cooking, and far too many board games. Ask me anything!",
-  community:   "Community — aiGrunn meetups, conference talks, and open-source contributions. Sebastiaan believes expertise only compounds when shared. What interests you?",
-  personality: "Values — craftsmanship, curiosity, radical honesty. Not wall-poster words but actual constraints on how he works and leads. What resonates?",
-  "nb-work":   "Work notebook — a running log of roles, projects, and lessons from Philips to FIOD to Youwe. Ask about any chapter.",
-};
-
-/** Type-aware opener fallback for nodes not in CHAT_OPENERS */
-function getOpenerForNode(nodeId: string, title: string, nodes: GraphNode[]): string {
-  const hardcoded = CHAT_OPENERS[nodeId];
-  if (hardcoded) return hardcoded;
-  const node = nodes.find((n) => n.id === nodeId);
-  switch (node?.type) {
-    case "job":       return `${title} — a role in Sebastiaan's career. Ask about what he built there, the team, the challenges, or what he'd do differently.`;
-    case "project":   return `${title} — one of Sebastiaan's projects. What do you want to know? Tech stack, origin story, current status…`;
-    case "skill":     return `${title} — part of the toolkit. Ask how he uses it, what he's built with it, or how it fits into the bigger picture.`;
-    case "education": return `${title} — ask about what Sebastiaan studied, what stuck, and how it shaped how he thinks today.`;
-    case "personal":  return `${title} — life beyond the keyboard. Ask Sebastiaan anything about this.`;
-    case "community": return `${title} — Sebastiaan's community work. Ask about events, talks, or his involvement.`;
-    case "opinion":   return `${title} — Sebastiaan has views here. Ask him to share his perspective.`;
-    default:          return `You're exploring ${title}. What would you like to know?`;
-  }
-}
-
 function Mindscape({
   token,
   dark,
@@ -199,21 +172,15 @@ function Mindscape({
         setFocusedNodeId(node.id);
         setHeroVisible(false);
         setChatActive(true);
-        setInlineMessages([]);
-        chat.reset();
-        const opener = getOpenerForNode(node.id, node.title, graphNodes);
-        setTimeout(() => {
-          addTwinMessage(opener);
-        }, 350);
       } else {
         setFocusedNodeId(null);
-        setInlineMessages([]);
-        setHeroVisible(true);
-        setChatActive(false);
-        chat.reset();
+        if (inlineMessages.length === 0) {
+          setHeroVisible(true);
+          setChatActive(false);
+        }
       }
     },
-    [addTwinMessage, chat, graphNodes],
+    [inlineMessages.length],
   );
 
   const goHome = useCallback(() => {
@@ -271,28 +238,31 @@ function Mindscape({
     });
   }, [chat.messages]);
 
-  /* ── Scroll chat ── */
-  const chatAreaRef = useRef<HTMLDivElement>(null);
+  // Show chat errors as inline messages
   useEffect(() => {
-    if (chatAreaRef.current) {
-      chatAreaRef.current.scrollTop = chatAreaRef.current.scrollHeight;
+    if (chat.error) {
+      const errText = chat.error === "conversation_limit"
+        ? "I've reached the conversation limit for this session. Refresh to start a new one!"
+        : `Something went wrong: ${chat.error}`;
+      addTwinMessage(errText);
+    }
+  }, [chat.error, addTwinMessage]);
+
+  /* ── Scroll area ref (canvas + messages) — auto-scroll to bottom ── */
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
   }, [inlineMessages]);
 
   return (
     <div className="min-h-[100dvh] bg-paper dark:bg-gray-950 transition-colors duration-500">
       {/* ════════════════════════════════════════════════════════════
-          HERO SECTION (full viewport)
+          HERO SECTION (full viewport, stacked layout)
           ════════════════════════════════════════════════════════════ */}
-      <div className="relative h-[100dvh] flex flex-col overflow-hidden" style={{ touchAction: "none" }}>
-        {/* Canvas */}
-        <MindscapeCanvas
-          nodes={graphNodes}
-          edges={graphEdges}
-          dark={dark}
-          onNodeFocus={handleNodeFocus}
-          focusedNodeId={focusedNodeId}
-        />
+      <div className="relative h-[100dvh] flex flex-col">
 
         {/* ── Settings button (top-right, always visible) ── */}
         <div ref={settingsRef} className="absolute top-4 right-4 z-[10]">
@@ -345,10 +315,10 @@ function Mindscape({
 
         {/* ── Compact Header (slides in when hero leaves) ── */}
         <div
-          className={`relative z-[3] flex items-center justify-between px-4 py-2.5
+          className={`shrink-0 z-[3] flex items-center justify-between px-4
             bg-white/75 dark:bg-gray-950/75 backdrop-blur-xl border-b border-ink/[0.06] dark:border-white/[0.06]
-            transition-all duration-600 ease-out
-            ${heroVisible ? "-translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}
+            transition-all duration-600 ease-out overflow-hidden
+            ${heroVisible ? "max-h-0 opacity-0 pointer-events-none" : "max-h-[60px] opacity-100 py-2.5"}`}
         >
           <div className="flex items-center gap-2.5">
             <img
@@ -372,90 +342,113 @@ function Mindscape({
           </div>
         </div>
 
-        {/* ── Hero Content (fades out when node focused) ── */}
+        {/* ── Scrollable area: canvas + chat messages ── */}
         <div
-          className={`relative z-[2] px-6 pt-12 sm:pt-16 pointer-events-none transition-all duration-700 ease-out
-            ${heroVisible ? "" : "-translate-y-[50vh] opacity-0"}`}
-        >
-          <div className="pointer-events-auto">
-            <div className="flex items-center gap-4 mb-1">
-              <img
-                src="/avatar_sebastiaan.png"
-                alt="Sebastiaan den Boer"
-                className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover border-2 border-ink/[0.06] dark:border-white/10 shadow-md shrink-0 hover:border-accent transition-colors"
-                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-              />
-              <h1 className="text-[clamp(2rem,5vw,3.2rem)] font-bold tracking-tight leading-[1.1] text-ink dark:text-white">
-                Sebastiaan<br />den Boer
-              </h1>
-            </div>
-            <p className="mt-2.5 text-[clamp(0.85rem,1.3vw,1rem)] text-ink/50 dark:text-white/50 max-w-[420px] leading-relaxed">
-              Creative adventurer. Nerd with MBA.
-            </p>
-            <div className="flex gap-5 mt-4">
-              {[
-                { label: "LinkedIn", href: "https://linkedin.com/in/svdenboer" },
-                { label: "GitHub", href: "https://github.com/Zaklamp02" },
-                { label: "Email", href: "mailto:sebastiaandenboer@gmail.com" },
-              ].map((link) => (
-                <a
-                  key={link.label}
-                  href={link.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[0.78rem] text-ink/30 dark:text-white/30 no-underline hover:text-accent dark:hover:text-accent transition-colors"
-                >
-                  {link.label}
-                </a>
-              ))}
-              <a
-                href="#about-section"
-                className="text-[0.78rem] text-ink/20 dark:text-white/20 no-underline hover:text-ink/40 dark:hover:text-white/40 transition-colors italic"
-              >
-                About ↓
-              </a>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Inline Chat Messages ── */}
-        <div
-          ref={chatAreaRef}
-          className="relative z-[2] flex-1 flex flex-col justify-end px-6 max-w-[600px] overflow-y-auto pointer-events-none"
+          ref={scrollAreaRef}
+          className="flex-1 min-h-0 overflow-y-auto flex flex-col"
           style={{ scrollbarWidth: "none" }}
         >
-          <div className="flex flex-col gap-2.5 pb-2 pointer-events-auto">
-            {inlineMessages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`max-w-[88%] px-4 py-3 rounded-2xl text-[0.88rem] leading-relaxed animate-bubble-in
-                  ${msg.role === "twin"
-                    ? "self-start bg-white/80 dark:bg-white/[0.06] backdrop-blur-lg border border-ink/[0.06] dark:border-white/[0.06] rounded-bl-sm text-ink dark:text-white"
-                    : "self-end bg-accent text-white rounded-br-sm"
-                  }`}
-              >
-                {msg.role === "twin" && (
-                  <div className="text-[0.6rem] font-semibold text-accent mb-1 tracking-wide">
-                    {TWIN_NAME}
-                  </div>
-                )}
-                {msg.content}
-              </div>
-            ))}
-            {chat.loading && inlineMessages.length > 0 && (
-              <div className="self-start bg-white/80 dark:bg-white/[0.06] backdrop-blur-lg border border-ink/[0.06] dark:border-white/[0.06] rounded-2xl rounded-bl-sm px-4 py-3">
-                <div className="flex gap-1">
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
+          {/* Canvas wrapper — fills viewport minus input bar, shrinks never */}
+          <div className="relative shrink-0" style={{ touchAction: "pan-y", height: "calc(100dvh - 60px)" }}>
+            <MindscapeCanvas
+              nodes={graphNodes}
+              edges={graphEdges}
+              dark={dark}
+              onNodeFocus={handleNodeFocus}
+              focusedNodeId={focusedNodeId}
+            />
+
+            {/* ── Hero Content (fades out when node focused) ── */}
+            <div
+              className={`absolute inset-x-0 top-0 z-[2] px-6 pt-12 sm:pt-16 pointer-events-none transition-all duration-700 ease-out
+                ${heroVisible ? "" : "-translate-y-[50vh] opacity-0"}`}
+            >
+              <div className="pointer-events-auto">
+                <div className="flex items-center gap-4 mb-1">
+                  <img
+                    src="/avatar_sebastiaan.png"
+                    alt="Sebastiaan den Boer"
+                    className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover border-2 border-ink/[0.06] dark:border-white/10 shadow-md shrink-0 hover:border-accent transition-colors"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                  />
+                  <h1 className="text-[clamp(2rem,5vw,3.2rem)] font-bold tracking-tight leading-[1.1] text-ink dark:text-white">
+                    Sebastiaan<br />den Boer
+                  </h1>
+                </div>
+                <p className="mt-2.5 text-[clamp(0.85rem,1.3vw,1rem)] text-ink/50 dark:text-white/50 max-w-[420px] leading-relaxed">
+                  Creative adventurer. Nerd with MBA.
+                </p>
+                <div className="flex gap-5 mt-4">
+                  {[
+                    { label: "LinkedIn", href: "https://linkedin.com/in/svdenboer" },
+                    { label: "GitHub", href: "https://github.com/Zaklamp02" },
+                    { label: "Email", href: "mailto:sebastiaandenboer@gmail.com" },
+                  ].map((link) => (
+                    <a
+                      key={link.label}
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[0.78rem] text-ink/30 dark:text-white/30 no-underline hover:text-accent dark:hover:text-accent transition-colors"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                  <a
+                    href="#about-section"
+                    className="text-[0.78rem] text-ink/20 dark:text-white/20 no-underline hover:text-ink/40 dark:hover:text-white/40 transition-colors italic"
+                  >
+                    About ↓
+                  </a>
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* ── Scroll hint ── */}
+            <span
+              className={`absolute bottom-6 right-6 text-[0.6rem] text-ink/20 dark:text-white/20 z-[2] pointer-events-none
+                ${heroVisible ? "animate-fade-pulse" : "opacity-0"} transition-opacity duration-500`}
+              style={{ writingMode: "vertical-rl", letterSpacing: "0.1em" }}
+            >
+              scroll for more
+            </span>
           </div>
+
+          {/* ── Chat Messages (below canvas, in normal flow) ── */}
+          {inlineMessages.length > 0 && (
+            <div className="flex flex-col gap-2.5 px-6 py-4 max-w-[600px]">
+              {inlineMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`max-w-[88%] px-4 py-3 rounded-2xl text-[0.88rem] leading-relaxed animate-bubble-in
+                    ${msg.role === "twin"
+                      ? "self-start bg-white/80 dark:bg-white/[0.06] backdrop-blur-lg border border-ink/[0.06] dark:border-white/[0.06] rounded-bl-sm text-ink dark:text-white"
+                      : "self-end bg-accent text-white rounded-br-sm"
+                    }`}
+                >
+                  {msg.role === "twin" && (
+                    <div className="text-[0.6rem] font-semibold text-accent mb-1 tracking-wide">
+                      {TWIN_NAME}
+                    </div>
+                  )}
+                  {msg.content}
+                </div>
+              ))}
+              {chat.loading && (
+                <div className="self-start bg-white/80 dark:bg-white/[0.06] backdrop-blur-lg border border-ink/[0.06] dark:border-white/[0.06] rounded-2xl rounded-bl-sm px-4 py-3">
+                  <div className="flex gap-1">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Input Bar ── */}
-        <div className="relative z-[2] px-6 pb-4 pt-2">
+        <div className="shrink-0 z-[2] px-6 pb-4 pt-2">
           <div className="flex items-center border border-ink/20 dark:border-white/20 rounded-2xl px-3.5 py-2.5 bg-white/80 dark:bg-gray-950/80 backdrop-blur-xl max-w-[520px] focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent/[0.08] transition-all">
             <input
               type="text"
@@ -467,8 +460,6 @@ function Mindscape({
                   e.currentTarget.value = "";
                 }
               }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
             />
             <button
               className={`w-[1.9rem] h-[1.9rem] rounded-full border-none flex items-center justify-center transition-all shrink-0 ${
@@ -506,15 +497,6 @@ function Mindscape({
             </button>
           </div>
         </div>
-
-        {/* ── Scroll hint ── */}
-        <span
-          className={`absolute bottom-24 right-6 text-[0.6rem] text-ink/20 dark:text-white/20 z-[2] pointer-events-none
-            ${heroVisible ? "animate-fade-pulse" : "opacity-0"} transition-opacity duration-500`}
-          style={{ writingMode: "vertical-rl", letterSpacing: "0.1em" }}
-        >
-          scroll for more
-        </span>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════

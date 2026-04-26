@@ -446,10 +446,13 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       const focused = focusedRef.current;
       s.time += 0.016;
 
-      // Camera lerp
-      s.cam.x += (s.camTarget.x - s.cam.x) * CAM_SPEED;
-      s.cam.y += (s.camTarget.y - s.cam.y) * CAM_SPEED;
-      s.cam.z += (s.camTarget.z - s.cam.z) * CAM_SPEED;
+      // Camera lerp with snap threshold to prevent end-of-transition jitter
+      const dx = s.camTarget.x - s.cam.x;
+      const dy = s.camTarget.y - s.cam.y;
+      const dz = s.camTarget.z - s.cam.z;
+      s.cam.x += Math.abs(dx) < 0.01 ? dx : dx * CAM_SPEED;
+      s.cam.y += Math.abs(dy) < 0.01 ? dy : dy * CAM_SPEED;
+      s.cam.z += Math.abs(dz) < 0.0001 ? dz : dz * CAM_SPEED;
 
       // Child expand
       if (focused) s.childExpandT = Math.min(1, s.childExpandT + 0.03);
@@ -826,8 +829,12 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
     };
     const onMouseLeave = () => { s.mouse = { x: -9999, y: -9999 }; };
     const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      s.camTarget.z = Math.max(0.5, Math.min(4, s.camTarget.z * (e.deltaY > 0 ? 0.9 : 1.1)));
+      // Only zoom on Ctrl/Meta+wheel (trackpad pinch gesture)
+      // Regular wheel scrolls the page normally
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        s.camTarget.z = Math.max(0.5, Math.min(4, s.camTarget.z * (e.deltaY > 0 ? 0.9 : 1.1)));
+      }
     };
 
     canvas.addEventListener("mousedown", onMouseDown);
@@ -855,8 +862,8 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       ts.length < 2 ? 0 : Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
 
     const onTouchStart = (e: TouchEvent) => {
-      e.preventDefault();
       if (e.touches.length === 1) {
+        // Don't preventDefault — let browser handle vertical scroll
         s.dragging = true; s.pinching = false; s.dragDistance = 0;
         const t = e.touches[0];
         s.dragStart = { x: t.clientX, y: t.clientY };
@@ -864,6 +871,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
         const r = canvas.getBoundingClientRect();
         s.mouse = { x: t.clientX - r.left, y: t.clientY - r.top };
       } else if (e.touches.length === 2) {
+        e.preventDefault(); // Prevent browser zoom, we handle pinch
         s.dragging = false; s.pinching = true;
         s.pinchStartDist = getTouchDist(e.touches);
         s.zoomAtPinchStart = s.camTarget.z;
@@ -874,17 +882,17 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       }
     };
     const onTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
       if (s.dragging && e.touches.length === 1) {
+        // Only pan camera horizontally; vertical scroll handled by browser
         const t = e.touches[0];
         const dx = t.clientX - s.dragStart.x;
         const dy = t.clientY - s.dragStart.y;
         s.dragDistance = Math.hypot(dx, dy);
         s.camTarget.x = s.camAtDragStart.x - dx / s.cam.z;
-        s.camTarget.y = s.camAtDragStart.y - dy / s.cam.z;
         const r = canvas.getBoundingClientRect();
         s.mouse = { x: t.clientX - r.left, y: t.clientY - r.top };
       } else if (s.pinching && e.touches.length === 2) {
+        e.preventDefault(); // Prevent browser zoom during pinch
         const dist = getTouchDist(e.touches);
         s.camTarget.z = Math.max(0.5, Math.min(4, s.zoomAtPinchStart * (dist / s.pinchStartDist)));
         const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
