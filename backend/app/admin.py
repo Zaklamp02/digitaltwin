@@ -1108,7 +1108,7 @@ async def upload_document(
     request: Request,
     file: UploadFile = File(...),
     title: str = Form(""),
-    roles: str = Form("public,recruiter"),
+    roles: str = Form("public,work"),
     description: str = Form(""),
     caller: Caller = Depends(_personal),
 ) -> dict[str, Any]:

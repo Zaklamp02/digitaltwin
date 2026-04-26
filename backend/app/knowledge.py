@@ -535,7 +535,7 @@ def migrate_from_memory(memory_dir: Path, db: KnowledgeDB) -> int:
     _HTML_TIER = re.compile(r"<!--\s*tier:\s*(\w+)\s*-->")
     _TIER_TO_ROLES = {
         "public": ["public"],
-        "recruiter": ["recruiter"],
+        "recruiter": ["public", "work"],  # legacy alias
         "personal": ["personal"],
         "system": ["personal"],
     }
@@ -682,7 +682,7 @@ _SEED_EDGES: list[tuple[str, str, str, str, str]] = [
     ("nb-work",  "stack",             "includes", "Tech Stack",           "nb-work--stack"),
     ("nb-work",  "faq",               "includes", "FAQ",                  "nb-work--faq"),
     ("nb-work",  "cv",                "includes", "CV",                   "nb-work--cv"),
-    ("nb-work",  "images",            "includes", "Images",               "nb-work--images"),
+
 
     # ── Personal notebook → chapters ─────────────────────────────────────────
     ("nb-personal", "personality",       "includes", "Personality",       "nb-personal--personality"),
@@ -743,7 +743,7 @@ _SEED_EDGES: list[tuple[str, str, str, str, str]] = [
 
     # ── Cross-links (non-containment) ─────────────────────────────────────────
     ("cv",      "identity", "describes",  "Curriculum Vitae",              "cv--identity"),
-    ("images",  "identity", "describes",  "Profile images",               "images--identity"),
+
     ("faq",     "identity", "describes",  "Frequently asked questions",   "faq--identity"),
     ("personality",         "disc",       "describes", "DISC profile",    "personality--disc"),
     ("personality",         "pldj",       "describes", "PLDJ",            "personality--pldj"),
@@ -964,39 +964,39 @@ Actual client names for Youwe AI practice reference projects.
 """
 
     new_nodes = [
-        ("nb-work",         "notebook",   "Work",              "",                ["public", "recruiter"]),
+        ("nb-work",         "notebook",   "Work",              "",                ["public", "work"]),
         ("nb-personal",     "notebook",   "Personal",          "",                ["personal"]),
-        ("certifications", "education",  "Certifications",    CERTS_BODY,        ["public", "recruiter"]),
-        ("training",        "education",  "Leadership Training", TRAINING_BODY,   ["public", "recruiter"]),
+        ("certifications", "education",  "Certifications",    CERTS_BODY,        ["public", "work"]),
+        ("training",        "education",  "Leadership Training", TRAINING_BODY,   ["public", "work"]),
         ("publication",     "document",   "Publications",      PUBLICATION_BODY,  ["public"]),
-        ("disc",            "document",   "DISC",              DISC_BODY,         ["public", "recruiter", "personal"]),
-        ("pldj",            "document",   "PLDJ",              PLDJ_BODY,         ["public", "recruiter", "personal"]),
-        ("iso-cert",        "document",   "ISO 13485",         ISO_CERT_BODY,     ["public", "recruiter"]),
+        ("disc",            "document",   "DISC",              DISC_BODY,         ["public", "work", "personal"]),
+        ("pldj",            "document",   "PLDJ",              PLDJ_BODY,         ["public", "work", "personal"]),
+        ("iso-cert",        "document",   "ISO 13485",         ISO_CERT_BODY,     ["public", "work"]),
         ("family",          "personal",   "Family",            FAMILY_PUBLIC_BODY, ["public"]),
-        ("family-personal", "personal",   "Family (Private)",  FAMILY_PRIVATE_BODY, ["public", "recruiter", "personal"]),
+        ("family-personal", "personal",   "Family (Private)",  FAMILY_PRIVATE_BODY, ["public", "work", "personal"]),
         ("engagements",     "community",  "Engagements",       ENGAGEMENTS_BODY,  ["public"]),
-        ("clients",         "personal",   "Clients",           CLIENTS_BODY,      ["public", "recruiter", "personal"]),
+        ("clients",         "personal",   "Clients",           CLIENTS_BODY,      ["public", "work", "personal"]),
         # Individual publication nodes (originally created via document upload)
         ("8714656d-313b-4476-9b4d-ee3db0322f95", "document",
-         "Evaluation of Activity Monitor in Pregnancy (BMC 2018)", "",            ["public", "recruiter"]),
+         "Evaluation of Activity Monitor in Pregnancy (BMC 2018)", "",            ["public", "work"]),
         ("43116815-686e-4afa-aae7-e8f63ec70815", "document",
-         "AI in Retail: Hyperpersonalisatie (ShoppingTomorrow 2024)", "",          ["public", "recruiter"]),
+         "AI in Retail: Hyperpersonalisatie (ShoppingTomorrow 2024)", "",          ["public", "work"]),
         ("3705e446-d1ca-4230-8508-42cf46b660da", "document",
-         "EU AI Act Compliance Guide for eCommerce (Youwe 2025)", "",              ["public", "recruiter"]),
+         "EU AI Act Compliance Guide for eCommerce (Youwe 2025)", "",              ["public", "work"]),
     ]
 
     # Edges involving the new nodes — now handled by _SEED_EDGES / resync_seed_edges.
     # Only non-seed edges with specific role overrides go here.
     new_edges = [
-        ("experience--philips",  "publication",            "authored",   "Philips publications",   ["public", "recruiter"],            "philips--publication"),
+        ("experience--philips",  "publication",            "authored",   "Philips publications",   ["public", "work"],            "philips--publication"),
         # Publication hub → individual publications
         ("publication", "8714656d-313b-4476-9b4d-ee3db0322f95", "includes", "Activity monitor pregnancy study (BMC 2018)",     ["public"],  "pub--bmc-2018"),
         ("publication", "43116815-686e-4afa-aae7-e8f63ec70815", "includes", "AI in retail hyperpersonalisatie (ShoppingTomorrow 2024)", ["public"], "pub--shopping-2024"),
         ("publication", "3705e446-d1ca-4230-8508-42cf46b660da", "includes", "EU AI Act compliance guide for eCommerce (Youwe 2025)",    ["public"], "pub--euai-2025"),
         # Experience → authored individual publications
-        ("experience--philips", "8714656d-313b-4476-9b4d-ee3db0322f95", "authored", "Philips health research publication",     ["public", "recruiter"], "philips--bmc-2018"),
-        ("experience--youwe",   "43116815-686e-4afa-aae7-e8f63ec70815", "authored", "ShoppingTomorrow expert contribution",    ["public", "recruiter"], "youwe--shopping-2024"),
-        ("experience--youwe",   "3705e446-d1ca-4230-8508-42cf46b660da", "authored", "EU AI Act whitepaper (lead expert)",      ["public", "recruiter"], "youwe--euai-2025"),
+        ("experience--philips", "8714656d-313b-4476-9b4d-ee3db0322f95", "authored", "Philips health research publication",     ["public", "work"], "philips--bmc-2018"),
+        ("experience--youwe",   "43116815-686e-4afa-aae7-e8f63ec70815", "authored", "ShoppingTomorrow expert contribution",    ["public", "work"], "youwe--shopping-2024"),
+        ("experience--youwe",   "3705e446-d1ca-4230-8508-42cf46b660da", "authored", "EU AI Act whitepaper (lead expert)",      ["public", "work"], "youwe--euai-2025"),
     ]
 
     # Notebook metadata for the four pillar nodes

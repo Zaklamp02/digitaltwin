@@ -74,15 +74,6 @@ export function SettingsMenu(props: Props) {
           >
             Clear conversation
           </button>
-          <button
-            onClick={() => {
-              props.onAdmin();
-              setOpen(false);
-            }}
-            className="w-full text-left rounded-md px-2 py-1.5 hover:bg-ink/5 text-ink/60 text-xs"
-          >
-            Admin dashboard ↗
-          </button>
           <div className="mt-2 text-[11px] text-ink/40 px-1">v{props.version}</div>
         </div>
       )}

@@ -82,6 +82,7 @@ class Chunk:
     roles: list[str]       # RBAC roles — pipe-joined in ChromaDB metadata
     memory_type: str       # factual|experience|project|opinion|personal|faq|community
     text: str
+    image_path: str = ""   # relative path within memory/ (non-empty for image chunks)
 
 
 def _token_count(text: str) -> int:
@@ -156,6 +157,10 @@ def chunk_node(node: "KnowledgeNode", chunk_tokens: int, overlap: int) -> list[C
         tier = "work"
     else:
         tier = "public"
+
+    # Propagate image_path from node metadata for image-type nodes
+    image_path: str = node.metadata.get("image_path", "") if isinstance(node.metadata, dict) else ""
+
     idx = 0
     for heading, body in sections:
         for window in _window_by_tokens(body, chunk_tokens, overlap):
@@ -173,6 +178,7 @@ def chunk_node(node: "KnowledgeNode", chunk_tokens: int, overlap: int) -> list[C
                     roles=node.roles,
                     memory_type=node.type,
                     text=text,
+                    image_path=image_path,
                 )
             )
             idx += 1
@@ -205,6 +211,7 @@ def upsert_chunks(collection, embedder: Embedder, chunks: list[Chunk]) -> None:
                 "tier": c.tier,
                 "roles": "|".join(c.roles),          # pipe-joined for storage
                 "memory_type": c.memory_type,
+                "image_path": c.image_path,
             }
             for c in chunks
         ],

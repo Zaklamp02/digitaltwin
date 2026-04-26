@@ -73,7 +73,7 @@ deploy:
 	    --exclude='.env' \
 	    --exclude='credentials.yaml' \
 	    -czf /tmp/digital-twin-deploy.tar.gz .
-	scp /tmp/digital-twin-deploy.tar.gz $(NAS_HOST):$(NAS_PATH)/
+	scp -O /tmp/digital-twin-deploy.tar.gz $(NAS_HOST):$(NAS_PATH)/
 	ssh -t $(NAS_HOST) "cd $(NAS_PATH) && tar -xzf digital-twin-deploy.tar.gz && rm digital-twin-deploy.tar.gz && sudo docker-compose up --build -d"
 
 restart:

@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # Telegram notifications (optional — no-op if unset)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_public_bot_token: str = ""  # second bot for public-facing access
 
     # Microsoft Teams Outgoing Webhook (optional)
     teams_webhook_secret: str = ""

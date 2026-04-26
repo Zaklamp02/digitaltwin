@@ -73,7 +73,13 @@ async def _sse_stream(
                 chat_id=settings.telegram_chat_id,
             )
         yield {"event": "chunks_used", "data": json.dumps([
-            {"file": c.file, "section": c.section_heading, "score": round(c.score, 3), "tier": c.tier}
+            {
+                "file": c.file,
+                "section": c.section_heading,
+                "score": round(c.score, 3),
+                "tier": c.tier,
+                **({"image_path": c.image_path} if c.image_path else {}),
+            }
             for c in chunks
         ])}
 
@@ -228,7 +234,7 @@ async def suggestions(request: Request):
         return {"suggestions": _FALLBACK}
 
     knowledge = request.app.state.knowledge
-    nodes = knowledge.list_nodes(role_filter=["public", "recruiter"])
+    nodes = knowledge.list_nodes(role_filter=["public", "work"])
 
     if not nodes:
         return {"suggestions": _FALLBACK}
@@ -298,3 +304,43 @@ async def public_graph(request: Request, caller: Caller = Depends(caller_dep)):
         return {"nodes": [], "edges": []}
     kb = request.app.state.knowledge
     return kb.get_graph(caller_roles=caller.roles)
+
+
+@router.get("/api/memory-image/{path:path}")
+async def memory_image(
+    path: str,
+    settings: Settings = Depends(get_settings),
+):
+    """Serve an image stored under the memory directory.
+
+    The path is validated to be within memory_path to prevent directory traversal.
+    Only image file extensions are accepted.
+    """
+    IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+    MEDIA_TYPES = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+
+    # Normalise and resolve; reject any attempt to escape memory_path
+    try:
+        resolved = (settings.memory_path / path).resolve()
+        resolved.relative_to(settings.memory_path.resolve())  # raises if outside
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="invalid image path")
+
+    if resolved.suffix.lower() not in IMAGE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="not an image file")
+
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="image not found")
+
+    media_type = MEDIA_TYPES.get(resolved.suffix.lower(), "application/octet-stream")
+    return FileResponse(
+        path=str(resolved),
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

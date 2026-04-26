@@ -109,15 +109,72 @@ export default function App() {
 
 const TWIN_NAME = "Basbot";
 
-/** Chat opener messages per node id */
+/** Containment edge types — same set as in MindscapeCanvas */
+const CONTAINMENT_EDGE_TYPES = new Set(["has", "includes", "nb_page", "member_of", "studied_at"]);
+
+/** Rich opener messages per node id */
 const CHAT_OPENERS: Record<string, string> = {
-  career: "Career — Sebastiaan went from hands-on data science to directing AI strategy. The MBA bridged tech and business. What angle interests you?",
-  education: "Education — from neuroscience to an executive MBA. A deliberate path from understanding the brain to leading teams. What would you like to know?",
-  hobbies: "Beyond work — woodworking (built a full kitchen!), running (slowly), cooking (enthusiastically), and too many board games. Ask me about any!",
-  community: "Community — speaking engagements, aiGrunn meetups, and thought leadership. Sebastiaan believes in sharing knowledge. What interests you?",
-  personality: "Values — craftsmanship, curiosity, honesty. Not just words on a wall. What resonates with you?",
-  "nb-work": "Work — from Philips to FIOD to leading AI at Youwe. I can tell you about any role, project, or challenge. What's on your mind?",
+  career:      "Career — Sebastiaan moved from hands-on data science to directing AI strategy at scale. The executive MBA bridged the tech/business gap. What angle interests you?",
+  education:   "Education — neuroscience BSc, a brief detour through software engineering, then an executive MBA. Each step was deliberate. What would you like to know?",
+  hobbies:     "Beyond work — woodworking (built a full kitchen from scratch!), running (slowly but consistently), cooking, and far too many board games. Ask me anything!",
+  community:   "Community — aiGrunn meetups, conference talks, and open-source contributions. Sebastiaan believes expertise only compounds when shared. What interests you?",
+  personality: "Values — craftsmanship, curiosity, radical honesty. Not wall-poster words but actual constraints on how he works and leads. What resonates?",
+  "nb-work":   "Work notebook — a running log of roles, projects, and lessons from Philips to FIOD to Youwe. Ask about any chapter.",
 };
+
+/** Type-aware opener fallback for nodes not in CHAT_OPENERS */
+function getOpenerForNode(nodeId: string, title: string, nodes: GraphNode[]): string {
+  const hardcoded = CHAT_OPENERS[nodeId];
+  if (hardcoded) return hardcoded;
+  const node = nodes.find((n) => n.id === nodeId);
+  switch (node?.type) {
+    case "job":       return `${title} — a role in Sebastiaan's career. Ask about what he built there, the team, the challenges, or what he'd do differently.`;
+    case "project":   return `${title} — one of Sebastiaan's projects. What do you want to know? Tech stack, origin story, current status…`;
+    case "skill":     return `${title} — part of the toolkit. Ask how he uses it, what he's built with it, or how it fits into the bigger picture.`;
+    case "education": return `${title} — ask about what Sebastiaan studied, what stuck, and how it shaped how he thinks today.`;
+    case "personal":  return `${title} — life beyond the keyboard. Ask Sebastiaan anything about this.`;
+    case "community": return `${title} — Sebastiaan's community work. Ask about events, talks, or his involvement.`;
+    case "opinion":   return `${title} — Sebastiaan has views here. Ask him to share his perspective.`;
+    default:          return `You're exploring ${title}. What would you like to know?`;
+  }
+}
+
+/** Generate 2–3 quick-tap suggestion chips for a focused node */
+function getSuggestionsForNode(
+  nodeId: string,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): string[] {
+  // Child nodes (containment edges)
+  const childIds = edges
+    .filter((e) => e.source === nodeId && CONTAINMENT_EDGE_TYPES.has(e.type))
+    .map((e) => e.target)
+    .slice(0, 5);
+  const children = childIds
+    .map((id) => nodes.find((n) => n.id === id))
+    .filter((n): n is GraphNode => n !== undefined);
+
+  if (children.length >= 2) {
+    return children.slice(0, 3).map((c) => `Tell me about ${c.title}`);
+  }
+
+  // Fallback: type-specific generic questions
+  const node = nodes.find((n) => n.id === nodeId);
+  switch (node?.type) {
+    case "job":
+      return ["What did you build here?", "What were the biggest challenges?", "Who was on your team?"];
+    case "project":
+      return ["What's the tech stack?", "What was the hardest part?", "Is this still active?"];
+    case "education":
+      return ["What was the most valuable thing you learned?", "How did this shape your career?"];
+    case "personal":
+      return ["Tell me more", "How did you get into this?"];
+    case "community":
+      return ["What events have you organised?", "What topics do you speak about?"];
+    default:
+      return ["Tell me more", "What's the most interesting part?"];
+  }
+}
 
 function Mindscape({
   token,
@@ -125,7 +182,7 @@ function Mindscape({
   setDark,
   language,
   setLanguage,
-  onAdmin,
+  onAdmin: _onAdmin,
 }: {
   token: string;
   dark: boolean;
@@ -161,6 +218,7 @@ function Mindscape({
   const [inlineMessages, setInlineMessages] = useState<
     { id: string; role: "user" | "twin"; content: string }[]
   >([]);
+  const [inlineSuggestions, setInlineSuggestions] = useState<string[]>([]);
 
   const addTwinMessage = useCallback((text: string) => {
     setInlineMessages((prev) => [
@@ -183,18 +241,24 @@ function Mindscape({
         setHeroVisible(false);
         setChatActive(true);
         setInlineMessages([]);
+        setInlineSuggestions([]);
         chat.reset();
-        const opener = CHAT_OPENERS[node.id] ?? `You're exploring ${node.title}. What would you like to know?`;
-        setTimeout(() => addTwinMessage(opener), 350);
+        const opener = getOpenerForNode(node.id, node.title, graphNodes);
+        const suggestions = getSuggestionsForNode(node.id, graphNodes, graphEdges);
+        setTimeout(() => {
+          addTwinMessage(opener);
+          setInlineSuggestions(suggestions);
+        }, 350);
       } else {
         setFocusedNodeId(null);
         setInlineMessages([]);
+        setInlineSuggestions([]);
         setHeroVisible(true);
         setChatActive(false);
         chat.reset();
       }
     },
-    [addTwinMessage, chat],
+    [addTwinMessage, chat, graphNodes, graphEdges],
   );
 
   const goHome = useCallback(() => {
@@ -225,6 +289,7 @@ function Mindscape({
         setHeroVisible(false);
         setChatActive(true);
       }
+      setInlineSuggestions([]); // dismiss chips once user starts talking
       addUserMessage(text);
       void chat.send(text);
     },
@@ -320,14 +385,6 @@ function Mindscape({
               </button>
 
               <div className="h-px bg-ink/[0.06] dark:bg-white/10 my-1.5" />
-
-              {/* Admin */}
-              <button
-                onClick={() => { onAdmin(); setSettingsOpen(false); }}
-                className="w-full text-left px-2 py-2 rounded-lg hover:bg-ink/5 dark:hover:bg-white/5 transition-colors text-ink/50 dark:text-white/40 text-xs"
-              >
-                Admin dashboard ↗
-              </button>
             </div>
           )}
         </div>
@@ -386,18 +443,23 @@ function Mindscape({
                 { label: "LinkedIn", href: "https://linkedin.com/in/svdenboer" },
                 { label: "GitHub", href: "https://github.com/Zaklamp02" },
                 { label: "Email", href: "mailto:sebastiaandenboer@gmail.com" },
-                { label: "About ↓", href: "#about-section" },
               ].map((link) => (
                 <a
                   key={link.label}
                   href={link.href}
-                  target={link.href.startsWith("http") ? "_blank" : undefined}
-                  rel={link.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-[0.78rem] text-ink/30 dark:text-white/30 no-underline hover:text-accent dark:hover:text-accent transition-colors"
                 >
                   {link.label}
                 </a>
               ))}
+              <a
+                href="#about-section"
+                className="text-[0.78rem] text-ink/20 dark:text-white/20 no-underline hover:text-ink/40 dark:hover:text-white/40 transition-colors italic"
+              >
+                About ↓
+              </a>
             </div>
           </div>
         </div>
@@ -435,6 +497,20 @@ function Mindscape({
                 </div>
               </div>
             )}
+            {/* ── Suggestion chips ── */}
+            {inlineSuggestions.length > 0 && !chat.loading && (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {inlineSuggestions.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleSend(s)}
+                    className="text-[0.76rem] px-3 py-1.5 rounded-full border border-accent/25 dark:border-accent/30 text-accent bg-accent/[0.05] dark:bg-accent/[0.08] hover:bg-accent/[0.12] hover:border-accent/50 transition-all"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -446,7 +522,7 @@ function Mindscape({
           <div className="flex items-center border border-ink/20 dark:border-white/20 rounded-2xl px-3.5 py-2.5 bg-white/80 dark:bg-gray-950/80 backdrop-blur-xl max-w-[520px] focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent/[0.08] transition-all">
             <input
               type="text"
-              placeholder="What's your experience with AI agents?"
+              placeholder={focusedNodeId ? `Ask about ${graphNodes.find(n => n.id === focusedNodeId)?.title ?? 'this topic'}…` : "What's your experience with AI agents?"}
               className="flex-1 border-none outline-none font-[inherit] text-[0.95rem] text-ink dark:text-white bg-transparent placeholder:text-ink/20 dark:placeholder:text-white/20"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && e.currentTarget.value.trim()) {
@@ -530,7 +606,7 @@ function Mindscape({
             </div>
           ))}
         </div>
-        <a href="#" className="inline-block mt-6 text-[0.8rem] text-accent no-underline hover:underline">See all posts →</a>
+        <a href="#" className="inline-block mt-6 text-[0.8rem] text-ink/20 dark:text-white/20 pointer-events-none">More posts coming soon</a>
       </section>
 
       {/* ── Projects ── */}

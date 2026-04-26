@@ -27,6 +27,7 @@ class RetrievedChunk:
     memory_type: str
     score: float
     text: str
+    image_path: str = ""   # non-empty for image-type chunks
 
 
 def build_embedder(settings: Settings) -> Embedder:
@@ -160,6 +161,7 @@ class RAGRetriever:
                     memory_type=(meta or {}).get("memory_type", "factual"),
                     score=score,
                     text=doc,
+                    image_path=(meta or {}).get("image_path", ""),
                 )
             )
             if len(out) >= self.settings.rag_top_k:
@@ -174,6 +176,9 @@ class RAGRetriever:
         for c in chunks:
             lines.append(f"## From {c.file} — {c.section_heading or '(intro)'} (score {c.score:.2f})")
             lines.append(c.text)
+            # For image nodes, append a markdown image directive so the LLM can embed it.
+            if c.image_path:
+                lines.append(f"\n[Image available — to show it inline use: `![{c.section_heading or 'image'}](/api/memory-image/{c.image_path})`]")
             lines.append("")
         return "\n".join(lines).rstrip() + "\n"
 

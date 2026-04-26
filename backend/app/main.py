@@ -19,7 +19,8 @@ from .logging_ import configure as configure_logging
 from .providers import AnthropicProvider, LLMProvider, OllamaProvider, OpenAIProvider
 from .rag import RAGRetriever, build_embedder
 from .teams_webhook import router as teams_router
-from .telegram_bot import TelegramBot
+from .telegram_bot import TelegramBot, PublicTelegramBot
+from .image_indexer import index_images_from_memory
 
 log = logging.getLogger("ask-my-agent")
 
@@ -60,6 +61,12 @@ async def lifespan(app: FastAPI):
     # Always resync canonical seed edges (safe — only touches deterministic IDs)
     resync_seed_edges(knowledge)
 
+    # Image indexing — caption any new *.png/jpg/webp in memory/ with OpenAI Vision.
+    # No-op if OPENAI_API_KEY is unset or no images found.
+    n_images = index_images_from_memory(knowledge, settings.memory_path, settings.openai_api_key)
+    if n_images:
+        log.info("image indexer: %d image node(s) created or updated", n_images)
+
     embedder = build_embedder(settings)
     retriever = RAGRetriever(settings=settings, knowledge=knowledge, embedder=embedder)
     retriever.reindex_all()
@@ -70,7 +77,7 @@ async def lifespan(app: FastAPI):
     app.state.retriever = retriever
     app.state.provider = provider
 
-    # Telegram bot — runs as a background asyncio task; no-op if tokens not set.
+    # Owner Telegram bot
     bot = TelegramBot(
         bot_token=settings.telegram_bot_token,
         owner_chat_id=settings.telegram_chat_id,
@@ -82,12 +89,29 @@ async def lifespan(app: FastAPI):
     )
     bot_task = asyncio.create_task(bot.run())
 
+    # Public Telegram bot (second token, open to anyone)
+    public_bot = PublicTelegramBot(
+        bot_token=settings.telegram_public_bot_token,
+        owner_chat_id=settings.telegram_chat_id,
+        retriever=retriever,
+        provider=provider,
+        log_path=settings.log_path,
+        knowledge=knowledge,
+        settings=settings,
+    )
+    public_bot_task = asyncio.create_task(public_bot.run())
+
     try:
         yield
     finally:
         bot.stop()
+        public_bot.stop()
         try:
             await asyncio.wait_for(bot_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+        try:
+            await asyncio.wait_for(public_bot_task, timeout=5)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             pass
         knowledge.close()

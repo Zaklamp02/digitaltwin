@@ -168,6 +168,44 @@ A second bot token accepting messages from *anyone*, backed by the same RAG stac
 - **i18n** — Dutch/English toggle (Sebastiaan works bilingually) *(done — see W1)*
 - **Notebook conflict resolution V2** — diff modal when offline edits conflict with server version (D3.5 V1 is last-write-wins)
 
+### UX / Admin polish
+
+- [ ] **Remove admin link from settings menu** — the gear / settings menu visible to end-users should not expose a direct link to the admin dashboard; remove or hide behind an auth check
+- [ ] **Improve send / mic icons in chat** — icons feel inconsistent (size, weight, style); audit both buttons and align them visually (stroke weight, padding, active states)
+
+### Content / data
+
+- [ ] **Node special effects — images & PDFs** — attach a primary image or PDF to a node and show it as a visual badge/preview in the Mindscape canvas and the knowledge detail panel; reuse existing `has_document` flag plumbing
+- [ ] **Better conversation starters on nodes** — current starters are generic; make them context-aware (pull from node body / edges), and model follow-up suggestions based on what was just asked / which related nodes exist
+- [ ] **Scrape LinkedIn posts → seed blog nodes** — write a one-off script that pulls Sebastiaan's LinkedIn posts (via li_scraper or manual export), converts each to a `blog` node with body text and a `public` role, and indexes them into the RAG store
+- [ ] **New hobby / interest nodes** — add graph nodes for: favourite games (board + video), electronics projects (ESP32 temperature sensors, solar panel monitoring setup), and link them to relevant skill/project nodes
+- [ ] **Rename `recruiter` role → `public`** — several nodes in the DB still carry the legacy `recruiter` access tag; audit all nodes with `roles = ["recruiter"]` and change them to `public` (or remove the tag where the node shouldn't be public at all)
+- [ ] **Consistent zoom animation on all Mindscape levels** — the first-level dive (e.g. clicking Hobbies) has a smooth camera-zoom transition; deeper dives feel like an instant screen-switch. Apply the same lerp/zoom-in animation to every level transition so the experience is seamless throughout the graph
+
+### Visual QA findings — 2026-04-26
+
+Full browser walkthrough performed against local Docker build after the April sprint. Issues ordered by priority.
+
+- [ ] **VQA-1 "Images" ghost node in Mindscape** — Image indexer creates an `Images` node visible in the public graph even when no images exist in `memory/`. The node has no meaningful content and confuses visitors. Fix: suppress node creation in `image_indexer.py` if there are no images to index, or filter `type="document" AND source_type="image"` nodes from the featured/canvas list until they have actual content.
+
+- [ ] **VQA-2 Second-level dive collapses to root** — After diving into Work (Level 1), double-clicking a child node (e.g. Youwe) collapses the graph all the way back to root instead of diving deeper. The two-phase animation logic in `MindscapeCanvas.tsx` appears to conflict with the existing focus collapse; the second click is treated as a "background click → go home". Needs investigation of the click-target detection in the canvas event handler.
+
+- [ ] **VQA-3 Initial graph layout imbalance** — On first load the 5–6 root nodes cluster in the lower-centre of the canvas, leaving the upper-right ~40% empty. The layout algorithm should distribute root nodes more evenly across the viewport (e.g. circular or golden-angle placement) so the canvas looks balanced before any interaction.
+
+- [ ] **VQA-4 Youwe shown at root AND as child of Work** — Youwe appears both as a standalone root-level node and as a child when Work is expanded, creating visual redundancy. Decide whether Youwe should be a top-level featured node or strictly a child; adjust `featured` flag accordingly.
+
+- [ ] **VQA-5 "See all posts →" links to "#"** — The blog section on the homepage has a live `See all posts →` link that goes nowhere (`href="#"`). Either wire it to a real blog route/page or hide it until blog pagination exists.
+
+- [ ] **VQA-6 Dark mode not visually applied on Mindscape canvas** — Toggling dark mode in the settings menu doesn't change the canvas background or particle colours (canvas `fillStyle` hardcoded to light values). The `/chat` route applies dark mode correctly via Tailwind classes. Canvas rendering in `MindscapeCanvas.tsx` needs to read the current theme and use dark palette values.
+
+- [ ] **VQA-7 Excessive empty space in /chat after short replies** — After one short exchange, the chat history sits near the top of the screen with ~60% blank canvas below before the input bar. Messages should be anchored to the bottom (`flex-col-reverse` or scroll-to-bottom on new message) to reduce the visual emptiness.
+
+- [ ] **VQA-8 Mindscape inline chat placeholder is generic** — The inline input on the landing page always shows "What's your experience with AI agents?" regardless of which node is focused. After a dive, the placeholder should update to match the node context (e.g. "Ask about Work…") to reinforce the conversation starter.
+
+- [ ] **VQA-9 "About ↓" styled same as external links** — In the hero section, "About ↓" (a same-page scroll anchor) is styled identically to "LinkedIn", "GitHub", "Email" (external links). These serve different purposes and should be visually distinguished — e.g. "About ↓" as a subtle scroll indicator, external links as icon+text badges.
+
+- [ ] **VQA-10 No typing indicator in Mindscape inline chat** — When a message is sent from the inline chat on the landing canvas, there is no loading/typing animation while the SSE streams. The `/chat` route shows a typing indicator; the same should be applied to the inline chat component.
+
 ## Open questions
 - [!] Concrete anecdotes to seed personal memory (kids' stories, Maerlyn)
 - [!] Explicit topic blocklist (former clients by name, specific projects)

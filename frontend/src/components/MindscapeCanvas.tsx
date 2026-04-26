@@ -77,12 +77,12 @@ const CONTAINMENT_EDGES = new Set([
  *  Nodes not in this map get auto-positioned in a ring. */
 
 const POSITIONS: Record<string, [number, number]> = {
-  career:      [180, -130],
-  education:   [200,  60],
-  hobbies:     [-140, 140],
-  community:   [-210, -60],
-  personality: [-60, -160],
-  "nb-work":   [60,  100],
+  career:      [170, -170],
+  education:   [230,  30],
+  hobbies:     [-170, 170],
+  community:   [-230, -30],
+  personality: [-30, -200],
+  "nb-work":   [30,  170],
 };
 
 const RADII: Record<string, number> = {
@@ -280,6 +280,8 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
     ringFadeT: 1,
     /** Direction of transition: 1 = diving in, -1 = backing out */
     ringFadeDir: 1 as 1 | -1,
+    /** Cooldown timestamp — ignore clicks for 500ms after a dive */
+    lastDiveTime: 0,
   });
 
   const layoutRef = useRef<LayoutNode[]>([]);
@@ -597,6 +599,9 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       });
       const wm = toWorld(sx, sy);
 
+      // Cooldown: ignore clicks within 500ms of a dive
+      if (Date.now() - s.lastDiveTime < 500) return;
+
       // Check if a child node was clicked (only when focused/dived)
       if (focused && s.childExpandT > 0.5) {
         const pw = nodeWorldPos(focused, s.drifts, lnodes, s.time);
@@ -605,7 +610,8 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
           const cwx = pw.x + child.dx * spread * s.childExpandT;
           const cwy = pw.y + child.dy * spread * s.childExpandT;
           if (Math.hypot(cwx - wm.x, cwy - wm.y) < child.r + 12) {
-            // Dive into this child
+            // Dive into this child — two-phase animated transition
+            s.lastDiveTime = Date.now();
             s.diveStack.push(child.id);
 
             // Save root layout if this is first dive
@@ -613,13 +619,9 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
               rootLayoutRef.current = { layout: [...layoutRef.current], edges: [...layoutEdgesRef.current] };
             }
 
-            // Build new layout centered on this child
+            // Build new layout (but don't apply it yet)
             const { layout: l, layoutEdges: le } = buildDiveLayout(child.id, nodes, edges);
-            layoutRef.current = l;
-            layoutEdgesRef.current = le;
-
-            // Reset drifts for new layout
-            s.drifts = l.map(() => ({
+            const newDrifts = l.map(() => ({
               ph: Math.random() * Math.PI * 2,
               ax: 4 + Math.random() * 6,
               ay: 4 + Math.random() * 6,
@@ -627,15 +629,24 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
               fy: 0.2 + Math.random() * 0.3,
             }));
 
-            // Animate: zoom in, then show new children
-            s.childExpandT = 0;
+            // Phase 1: zoom camera INTO the clicked child's world position
+            // and collapse existing children by nulling focusedRef
+            s.camTarget = { x: cwx, y: cwy - 10, z: FOCUS_ZOOM * 1.5 };
             s.ringFadeT = 0;
-            s.ringFadeDir = 1;
-            s.camTarget = { x: 0, y: -20, z: FOCUS_ZOOM };
+            focusedRef.current = null; // triggers childExpandT auto-shrink in loop
 
-            // Focus on the dived node
-            focusedRef.current = l[0] ?? null;
-            onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title } : null);
+            // Phase 2 (after 420 ms): apply new layout and zoom to center
+            setTimeout(() => {
+              layoutRef.current = l;
+              layoutEdgesRef.current = le;
+              s.drifts = newDrifts;
+              s.childExpandT = 0;
+              s.ringFadeT = 0;
+              s.ringFadeDir = 1;
+              s.camTarget = { x: 0, y: -20, z: FOCUS_ZOOM };
+              focusedRef.current = l[0] ?? null;
+              onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title } : null);
+            }, 420);
             return;
           }
         }
@@ -649,6 +660,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       }
 
       if (clicked && clicked.id !== focusedNodeId) {
+        s.lastDiveTime = Date.now();
         onNodeFocus(clicked);
       } else if (!clicked) {
         // Clicked empty space

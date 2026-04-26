@@ -156,7 +156,8 @@ export function ChatStream({ messages, onReplay, onSend, ttsEnabled, token }: Pr
 
   return (
     <div className="relative flex-1 overflow-hidden">
-      <div ref={scrollRef} className="chat-scroll h-full overflow-y-auto px-4 py-4 space-y-4">
+      <div ref={scrollRef} className="chat-scroll h-full overflow-y-auto px-4 py-4">
+      <div className="flex flex-col justify-end min-h-full space-y-4">
       {/* Always show a welcome bubble */}
       <div className="flex justify-start">
         <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-3 text-[15px] leading-relaxed bg-white dark:bg-gray-800 border border-ink/10 dark:border-white/10 text-ink dark:text-white shadow-sm">
@@ -242,6 +243,7 @@ export function ChatStream({ messages, onReplay, onSend, ttsEnabled, token }: Pr
         );
       })}
       <div ref={endRef} />
+      </div>
       </div>
       {/* Scroll-to-bottom button — appears when user scrolls up */}
       {showScrollBtn && (
