@@ -109,9 +109,6 @@ export default function App() {
 
 const TWIN_NAME = "Basbot";
 
-/** Containment edge types — same set as in MindscapeCanvas */
-const CONTAINMENT_EDGE_TYPES = new Set(["has", "includes", "nb_page", "member_of", "studied_at"]);
-
 /** Rich opener messages per node id */
 const CHAT_OPENERS: Record<string, string> = {
   career:      "Career — Sebastiaan moved from hands-on data science to directing AI strategy at scale. The executive MBA bridged the tech/business gap. What angle interests you?",
@@ -136,43 +133,6 @@ function getOpenerForNode(nodeId: string, title: string, nodes: GraphNode[]): st
     case "community": return `${title} — Sebastiaan's community work. Ask about events, talks, or his involvement.`;
     case "opinion":   return `${title} — Sebastiaan has views here. Ask him to share his perspective.`;
     default:          return `You're exploring ${title}. What would you like to know?`;
-  }
-}
-
-/** Generate 2–3 quick-tap suggestion chips for a focused node */
-function getSuggestionsForNode(
-  nodeId: string,
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-): string[] {
-  // Child nodes (containment edges)
-  const childIds = edges
-    .filter((e) => e.source === nodeId && CONTAINMENT_EDGE_TYPES.has(e.type))
-    .map((e) => e.target)
-    .slice(0, 5);
-  const children = childIds
-    .map((id) => nodes.find((n) => n.id === id))
-    .filter((n): n is GraphNode => n !== undefined);
-
-  if (children.length >= 2) {
-    return children.slice(0, 3).map((c) => `Tell me about ${c.title}`);
-  }
-
-  // Fallback: type-specific generic questions
-  const node = nodes.find((n) => n.id === nodeId);
-  switch (node?.type) {
-    case "job":
-      return ["What did you build here?", "What were the biggest challenges?", "Who was on your team?"];
-    case "project":
-      return ["What's the tech stack?", "What was the hardest part?", "Is this still active?"];
-    case "education":
-      return ["What was the most valuable thing you learned?", "How did this shape your career?"];
-    case "personal":
-      return ["Tell me more", "How did you get into this?"];
-    case "community":
-      return ["What events have you organised?", "What topics do you speak about?"];
-    default:
-      return ["Tell me more", "What's the most interesting part?"];
   }
 }
 
@@ -218,7 +178,6 @@ function Mindscape({
   const [inlineMessages, setInlineMessages] = useState<
     { id: string; role: "user" | "twin"; content: string }[]
   >([]);
-  const [inlineSuggestions, setInlineSuggestions] = useState<string[]>([]);
 
   const addTwinMessage = useCallback((text: string) => {
     setInlineMessages((prev) => [
@@ -241,24 +200,20 @@ function Mindscape({
         setHeroVisible(false);
         setChatActive(true);
         setInlineMessages([]);
-        setInlineSuggestions([]);
         chat.reset();
         const opener = getOpenerForNode(node.id, node.title, graphNodes);
-        const suggestions = getSuggestionsForNode(node.id, graphNodes, graphEdges);
         setTimeout(() => {
           addTwinMessage(opener);
-          setInlineSuggestions(suggestions);
         }, 350);
       } else {
         setFocusedNodeId(null);
         setInlineMessages([]);
-        setInlineSuggestions([]);
         setHeroVisible(true);
         setChatActive(false);
         chat.reset();
       }
     },
-    [addTwinMessage, chat, graphNodes, graphEdges],
+    [addTwinMessage, chat, graphNodes],
   );
 
   const goHome = useCallback(() => {
@@ -289,7 +244,6 @@ function Mindscape({
         setHeroVisible(false);
         setChatActive(true);
       }
-      setInlineSuggestions([]); // dismiss chips once user starts talking
       addUserMessage(text);
       void chat.send(text);
     },
@@ -436,7 +390,7 @@ function Mindscape({
               </h1>
             </div>
             <p className="mt-2.5 text-[clamp(0.85rem,1.3vw,1rem)] text-ink/50 dark:text-white/50 max-w-[420px] leading-relaxed">
-              I build AI systems that make high-stakes decisions better. Director of Data Science &amp; AI. Nerd with MBA.
+              Creative adventurer. Nerd with MBA.
             </p>
             <div className="flex gap-5 mt-4">
               {[
@@ -497,32 +451,15 @@ function Mindscape({
                 </div>
               </div>
             )}
-            {/* ── Suggestion chips ── */}
-            {inlineSuggestions.length > 0 && !chat.loading && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {inlineSuggestions.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => handleSend(s)}
-                    className="text-[0.76rem] px-3 py-1.5 rounded-full border border-accent/25 dark:border-accent/30 text-accent bg-accent/[0.05] dark:bg-accent/[0.08] hover:bg-accent/[0.12] hover:border-accent/50 transition-all"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </div>
 
         {/* ── Input Bar ── */}
         <div className="relative z-[2] px-6 pb-4 pt-2">
-          <div className="text-[0.65rem] text-ink/20 dark:text-white/20 mb-1.5 tracking-widest uppercase">
-            Ask {TWIN_NAME} anything
-          </div>
           <div className="flex items-center border border-ink/20 dark:border-white/20 rounded-2xl px-3.5 py-2.5 bg-white/80 dark:bg-gray-950/80 backdrop-blur-xl max-w-[520px] focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent/[0.08] transition-all">
             <input
               type="text"
-              placeholder={focusedNodeId ? `Ask about ${graphNodes.find(n => n.id === focusedNodeId)?.title ?? 'this topic'}…` : "What's your experience with AI agents?"}
+              placeholder="Ask me anything!"
               className="flex-1 border-none outline-none font-[inherit] text-[0.95rem] text-ink dark:text-white bg-transparent placeholder:text-ink/20 dark:placeholder:text-white/20"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && e.currentTarget.value.trim()) {

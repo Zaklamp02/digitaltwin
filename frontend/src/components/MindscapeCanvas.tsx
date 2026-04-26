@@ -90,8 +90,39 @@ const RADII: Record<string, number> = {
   community: 19, personality: 19, "nb-work": 22,
 };
 
-const DEFAULT_ZOOM = typeof window !== "undefined" && window.innerWidth < 600 ? 0.9 : 1.35;
-const FOCUS_ZOOM = 2.2;
+/** Compute default (unfocused) zoom so all root nodes fit horizontally.
+ *  Root positions span ±230 + node radius ≈ 254 world-units from centre. */
+function getDefaultZoom(canvasW: number): number {
+  const MAX_EXTENT = 254; // max world-x of outermost node centre + radius
+  const MARGIN = 30;      // px breathing room on each side
+  const fit = (canvasW / 2 - MARGIN) / MAX_EXTENT;
+  return Math.min(fit, 1.35);  // cap at desktop max
+}
+
+/** Compute focus zoom so child ring fits horizontally.
+ *  Children extend up to dx≈60 × spread 2.4 ≈ 144 world-units from centre. */
+function getFocusZoom(canvasW: number): number {
+  const MAX_CHILD_EXTENT = 150; // world-units (dx*spread + label slack)
+  const MARGIN = 35;
+  const fit = (canvasW / 2 - MARGIN) / MAX_CHILD_EXTENT;
+  return Math.min(fit, 2.2);   // cap at desktop max
+}
+
+const _INIT_W = typeof window !== "undefined" ? window.innerWidth : 1200;
+const _INIT_H = typeof window !== "undefined" ? window.innerHeight : 900;
+const DEFAULT_ZOOM = getDefaultZoom(_INIT_W);
+
+/** Vertical camera offset so graph sits between hero overlay and input bar.
+ *  Hero content ≈ top 22%, input bar ≈ bottom 65px. */
+function getDefaultCamY(canvasW: number, canvasH: number): number {
+  const heroH = Math.min(canvasH * 0.22, 200); // hero overlay height (px)
+  const inputH = 65;                             // input bar height (px)
+  const usableCenter = heroH + (canvasH - heroH - inputH) / 2;
+  const shiftPx = usableCenter - canvasH / 2;    // how far below screen center
+  return -(shiftPx / getDefaultZoom(canvasW));    // negative = moves rendered world down
+}
+
+const DEFAULT_CAM_Y = getDefaultCamY(_INIT_W, _INIT_H);
 const CAM_SPEED = 0.05;
 const PARTICLE_COUNT = 130;
 
@@ -255,8 +286,8 @@ interface Props {
 export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef({
-    cam: { x: 0, y: 0, z: DEFAULT_ZOOM } as Camera,
-    camTarget: { x: 0, y: 0, z: DEFAULT_ZOOM } as Camera,
+    cam: { x: 0, y: DEFAULT_CAM_Y, z: DEFAULT_ZOOM } as Camera,
+    camTarget: { x: 0, y: DEFAULT_CAM_Y, z: DEFAULT_ZOOM } as Camera,
     time: 0,
     hoveredNode: null as LayoutNode | null,
     hoveredChild: null as ChildNode | null,
@@ -282,6 +313,8 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
     ringFadeDir: 1 as 1 | -1,
     /** Cooldown timestamp — ignore clicks for 500ms after a dive */
     lastDiveTime: 0,
+    /** When true, the click handler is managing the transition — skip sync effect */
+    skipSync: false,
   });
 
   const layoutRef = useRef<LayoutNode[]>([]);
@@ -331,6 +364,11 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
   // Sync focused node from parent
   useEffect(() => {
     const s = stateRef.current;
+    // Skip if the click handler is managing the transition
+    if (s.skipSync) {
+      s.skipSync = false;
+      return;
+    }
     if (focusedNodeId) {
       // Check if it's a layout node in current layout
       const node = layoutRef.current.find((n) => n.id === focusedNodeId) ?? null;
@@ -339,7 +377,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
         const wp = nodeWorldPos(node, s.drifts, layoutRef.current, s.time);
         s.camTarget.x = wp.x;
         s.camTarget.y = wp.y - 20;
-        s.camTarget.z = FOCUS_ZOOM;
+        s.camTarget.z = getFocusZoom(s.W || window.innerWidth);
       }
     } else {
       focusedRef.current = null;
@@ -359,8 +397,8 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
         }
       }
       s.camTarget.x = 0;
-      s.camTarget.y = 0;
-      s.camTarget.z = DEFAULT_ZOOM;
+      s.camTarget.y = getDefaultCamY(s.W || window.innerWidth, s.H || window.innerHeight);
+      s.camTarget.z = getDefaultZoom(s.W || window.innerWidth);
     }
   }, [focusedNodeId]);
 
@@ -377,6 +415,13 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       canvas.height = s.H * d;
       const ctx = canvas.getContext("2d");
       if (ctx) ctx.setTransform(d, 0, 0, d, 0, 0);
+      // Update zoom targets for new size
+      if (!focusedRef.current && s.diveStack.length === 0) {
+        s.camTarget.z = getDefaultZoom(s.W);
+        s.camTarget.y = getDefaultCamY(s.W, s.H);
+      } else if (focusedRef.current) {
+        s.camTarget.z = getFocusZoom(s.W);
+      }
     };
     resize();
     window.addEventListener("resize", resize);
@@ -610,7 +655,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
           const cwx = pw.x + child.dx * spread * s.childExpandT;
           const cwy = pw.y + child.dy * spread * s.childExpandT;
           if (Math.hypot(cwx - wm.x, cwy - wm.y) < child.r + 12) {
-            // Dive into this child — two-phase animated transition
+            // Dive into this child — same smooth focus approach as root level
             s.lastDiveTime = Date.now();
             s.diveStack.push(child.id);
 
@@ -619,8 +664,14 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
               rootLayoutRef.current = { layout: [...layoutRef.current], edges: [...layoutEdgesRef.current] };
             }
 
-            // Build new layout (but don't apply it yet)
+            // Build new layout centered on the child's current world position
+            // so camera doesn't need to jump
             const { layout: l, layoutEdges: le } = buildDiveLayout(child.id, nodes, edges);
+            // Offset new layout to child's current world position
+            if (l[0]) {
+              l[0].wx = cwx;
+              l[0].wy = cwy;
+            }
             const newDrifts = l.map(() => ({
               ph: Math.random() * Math.PI * 2,
               ax: 4 + Math.random() * 6,
@@ -629,24 +680,24 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
               fy: 0.2 + Math.random() * 0.3,
             }));
 
-            // Phase 1: zoom camera INTO the clicked child's world position
-            // and collapse existing children by nulling focusedRef
-            s.camTarget = { x: cwx, y: cwy - 10, z: FOCUS_ZOOM * 1.5 };
+            // Swap layout immediately but keep camera where it is —
+            // the new center node is at the same world position,
+            // so the visual transition is just the children collapsing
+            // and new children expanding (same as first-level focus).
+            layoutRef.current = l;
+            layoutEdgesRef.current = le;
+            s.drifts = newDrifts;
+            s.childExpandT = 0;
             s.ringFadeT = 0;
-            focusedRef.current = null; // triggers childExpandT auto-shrink in loop
+            s.ringFadeDir = 1;
 
-            // Phase 2 (after 420 ms): apply new layout and zoom to center
-            setTimeout(() => {
-              layoutRef.current = l;
-              layoutEdgesRef.current = le;
-              s.drifts = newDrifts;
-              s.childExpandT = 0;
-              s.ringFadeT = 0;
-              s.ringFadeDir = 1;
-              s.camTarget = { x: 0, y: -20, z: FOCUS_ZOOM };
-              focusedRef.current = l[0] ?? null;
-              onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title } : null);
-            }, 420);
+            // Focus the new center node — camera lerps to it smoothly
+            focusedRef.current = l[0] ?? null;
+            if (l[0]) {
+              s.camTarget = { x: cwx, y: cwy - 20, z: getFocusZoom(s.W || window.innerWidth) };
+            }
+            s.skipSync = true;
+            onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title } : null);
             return;
           }
         }
@@ -665,16 +716,25 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       } else if (!clicked) {
         // Clicked empty space
         if (s.diveStack.length > 0) {
-          // Back out one level
-          s.diveStack.pop();
-          s.childExpandT = 0;
-          s.ringFadeT = 0;
-          s.ringFadeDir = -1;
+          // Back out one level — immediate swap at same position (mirrors dive-in)
+          const poppedId = s.diveStack.pop()!;
+          s.lastDiveTime = Date.now();
+
+          // Record current center node's world position before swap
+          const oldCenter = layoutRef.current[0];
+          const oldPos = oldCenter
+            ? nodeWorldPos(oldCenter, s.drifts, layoutRef.current, s.time)
+            : { x: s.cam.x, y: s.cam.y };
 
           if (s.diveStack.length > 0) {
-            // Still dived — rebuild for parent
+            // Still dived — rebuild parent layout
             const parentId = s.diveStack[s.diveStack.length - 1];
             const { layout: l, layoutEdges: le } = buildDiveLayout(parentId, nodes, edges);
+            // Position new center at old center's world position — no visual jump
+            if (l[0]) {
+              l[0].wx = oldPos.x;
+              l[0].wy = oldPos.y;
+            }
             layoutRef.current = l;
             layoutEdgesRef.current = le;
             s.drifts = l.map(() => ({
@@ -684,11 +744,16 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
               fx: 0.2 + Math.random() * 0.3,
               fy: 0.2 + Math.random() * 0.3,
             }));
+            s.childExpandT = 0;
+            s.ringFadeT = 0;
             focusedRef.current = l[0] ?? null;
-            s.camTarget = { x: 0, y: -20, z: FOCUS_ZOOM };
+            if (l[0]) {
+              s.camTarget = { x: l[0].wx, y: l[0].wy - 20, z: getFocusZoom(s.W || window.innerWidth) };
+            }
+            s.skipSync = true;
             onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title } : null);
           } else {
-            // Back to root
+            // Back to root — restore and re-focus parent featured node
             if (rootLayoutRef.current) {
               layoutRef.current = rootLayoutRef.current.layout;
               layoutEdgesRef.current = rootLayoutRef.current.edges;
@@ -699,9 +764,27 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
                 fx: 0.2 + Math.random() * 0.3,
                 fy: 0.2 + Math.random() * 0.3,
               }));
+              const parentNode = rootLayoutRef.current.layout.find((n) =>
+                n.children.some((c) => c.id === poppedId)
+              );
+              if (parentNode) {
+                s.childExpandT = 0;
+                s.ringFadeT = 0;
+                focusedRef.current = parentNode;
+                const wp = nodeWorldPos(parentNode, s.drifts, layoutRef.current, s.time);
+                s.camTarget = { x: wp.x, y: wp.y - 20, z: getFocusZoom(s.W || window.innerWidth) };
+                s.skipSync = true;
+                onNodeFocus({ id: parentNode.id, title: parentNode.title });
+              } else {
+                focusedRef.current = null;
+                s.camTarget = { x: 0, y: getDefaultCamY(s.W || window.innerWidth, s.H || window.innerHeight), z: getDefaultZoom(s.W || window.innerWidth) };
+                onNodeFocus(null);
+              }
+            } else {
+              focusedRef.current = null;
+              s.camTarget = { x: 0, y: getDefaultCamY(s.W || window.innerWidth, s.H || window.innerHeight), z: getDefaultZoom(s.W || window.innerWidth) };
+              onNodeFocus(null);
             }
-            focusedRef.current = null;
-            onNodeFocus(null);
           }
         } else if (focusedNodeId) {
           // Unfocus at root level
