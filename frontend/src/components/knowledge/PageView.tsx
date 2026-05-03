@@ -291,7 +291,7 @@ function ChapterChildList({ children }: { children: TreeNode[] }) {
 
 // ── Main PageView ─────────────────────────────────────────────────────────────
 
-export default function PageView() {
+export default function PageView({ readOnly }: { readOnly?: boolean }) {
   const { currentPage, currentPageId, currentTree, loading, refreshPage, refreshTree, clearPage, loadOrphans } = useKnowledge();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
@@ -300,7 +300,7 @@ export default function PageView() {
       <div className="flex-1 flex items-center justify-center text-gray-400 bg-gray-50">
         <div className="text-center">
           <p className="text-4xl mb-3">📝</p>
-          <p className="text-sm">Select a page to view and edit it.</p>
+          <p className="text-sm">{readOnly ? "Select a page to view it." : "Select a page to view and edit it."}</p>
         </div>
       </div>
     );
@@ -344,8 +344,12 @@ export default function PageView() {
           <div className="mb-6">
             <Breadcrumb page={currentPage} />
             <div className="flex items-center gap-2 mb-2">
-              <EditableTitle title={currentPage.title} pageId={currentPage.id} onSaved={handleSaved} />
+              {readOnly
+                ? <h1 className="text-2xl font-bold text-gray-900 flex-1">{currentPage.title}</h1>
+                : <EditableTitle title={currentPage.title} pageId={currentPage.id} onSaved={handleSaved} />
+              }
               <TypeBadge type={currentPage.type} />
+              {!readOnly && (
               <button
                 onClick={() => setShowDeleteModal(true)}
                 title="Delete this page"
@@ -355,21 +359,26 @@ export default function PageView() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
-              <RolesEditor roles={currentPage.roles} pageId={currentPage.id} onSaved={handleSaved} />
-              <FeaturedToggle pageId={currentPage.id} metadata={currentPage.metadata} onSaved={handleSaved} />
+              {readOnly
+                ? <div className="flex gap-1">{currentPage.roles.map(r => <span key={r} className={`text-xs px-1.5 py-0.5 rounded ${ROLE_COLORS[r] ?? "bg-gray-100 text-gray-600"}`}>{r}</span>)}</div>
+                : <RolesEditor roles={currentPage.roles} pageId={currentPage.id} onSaved={handleSaved} />
+              }
+              {!readOnly && <FeaturedToggle pageId={currentPage.id} metadata={currentPage.metadata} onSaved={handleSaved} />}
               <span className="text-xs text-gray-400 ml-2">
                 Updated {new Date(currentPage.updated_at).toLocaleDateString("nl-NL")}
               </span>
             </div>
           </div>
 
-          {/* Editor */}
+          {/* Editor / viewer */}
           <PageEditor
             key={currentPageId}
             page={currentPage}
             onSaved={handleSaved}
+            readOnly={readOnly}
           />
 
           {/* Chapter: show child page list below editor */}
@@ -377,14 +386,15 @@ export default function PageView() {
         </div>
       </div>
 
-      {/* Cross-links panel — always visible for add capability */}
+      {/* Cross-links panel */}
       <CrossLinksPanel
         edges={crossLinks}
         nodeId={currentPage.id}
         onRefresh={refreshPage}
+        readOnly={readOnly}
       />
 
-      {showDeleteModal && (
+      {!readOnly && showDeleteModal && (
         <DeletePageModal
           nodeId={currentPage.id}
           nodeTitle={currentPage.title}

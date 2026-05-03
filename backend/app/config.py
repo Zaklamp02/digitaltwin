@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     # Paths
     memory_dir: str = "./memory"
+    vault_dir: str = ""  # Obsidian vault path; if set, replaces memory_dir as source of truth
     chroma_dir: str = "./chroma_db"
     credentials_file: str = "./credentials.yaml"
     knowledge_db: str = "./data/knowledge.db"
@@ -76,6 +77,10 @@ class Settings(BaseSettings):
     @property
     def memory_path(self) -> Path:
         return Path(self.memory_dir).resolve()
+
+    @property
+    def vault_path(self) -> Path | None:
+        return Path(self.vault_dir).resolve() if self.vault_dir else None
 
     @property
     def chroma_path(self) -> Path:

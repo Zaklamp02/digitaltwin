@@ -7,9 +7,11 @@ import { NodeDetail, apiFetch } from "./KnowledgeContext";
 export default function PageEditor({
   page,
   onSaved,
+  readOnly,
 }: {
   page: NodeDetail;
   onSaved: () => void;
+  readOnly?: boolean;
 }) {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,6 +83,7 @@ export default function PageEditor({
   return (
     <div>
       {/* Save status indicator */}
+      {!readOnly && (
       <div className="flex items-center justify-end mb-2">
         <span className={`text-xs ${
           saveStatus === "saved" ? "text-gray-400" :
@@ -92,12 +95,14 @@ export default function PageEditor({
            "Error saving"}
         </span>
       </div>
+      )}
 
       {/* BlockNote editor */}
       <div className="prose prose-sm max-w-none">
         <BlockNoteView
           editor={editor}
-          onChange={handleChange}
+          onChange={readOnly ? undefined : handleChange}
+          editable={!readOnly}
           theme="light"
         />
       </div>

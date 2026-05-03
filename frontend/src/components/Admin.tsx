@@ -178,11 +178,58 @@ function TierBar({ breakdown }: { breakdown: Record<string, number> }) {
 
 // ── Overview tab ──────────────────────────────────────────────────────────────
 
-function OverviewTab({ stats }: { stats: Stats }) {
+function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; vaultMode?: boolean; syncStatus?: any; token: string }) {
   const totalBreakdown = Object.values(stats.tier_breakdown).reduce((a, b) => a + b, 0) || 1;
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const res = await fetch("/api/admin/sync-trigger", {
+        method: "POST",
+        headers: { "X-Access-Token": token },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncMsg(data.status === "no_changes" ? "No changes detected" : `Synced: ${data.created ?? 0} created, ${data.updated ?? 0} updated, ${data.deleted ?? 0} deleted`);
+      } else {
+        setSyncMsg(`Error: ${data.detail ?? "unknown"}`);
+      }
+    } catch (e: any) {
+      setSyncMsg(`Error: ${e.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
+
+      {/* Vault sync status */}
+      {vaultMode && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-amber-800">Vault Sync</h3>
+            <button
+              onClick={triggerSync}
+              disabled={syncing}
+              className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            >
+              {syncing ? "Syncing…" : "Sync now"}
+            </button>
+          </div>
+          <div className="text-xs text-amber-700 space-y-1">
+            <p>Source: <code className="bg-amber-100 px-1 rounded">{syncStatus?.vault_path ?? "—"}</code></p>
+            {syncStatus?.last_sync && (
+              <p>Last sync: {syncStatus.last_sync.timestamp ?? "—"} — {syncStatus.last_sync.created ?? 0} created, {syncStatus.last_sync.updated ?? 0} updated, {syncStatus.last_sync.deleted ?? 0} deleted</p>
+            )}
+            {!syncStatus?.last_sync && <p>No sync recorded yet.</p>}
+          </div>
+          {syncMsg && <p className="text-xs text-amber-900 mt-2 font-medium">{syncMsg}</p>}
+        </div>
+      )}
       {/* Primary stats */}
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Conversations</h3>
@@ -382,7 +429,7 @@ interface ContentConfig {
   chips: { label: string; text: string }[];
 }
 
-function ContentTab({ token }: { token: string }) {
+function ContentTab({ token, readOnly }: { token: string; readOnly?: boolean }) {
   const [cfg, setCfg] = useState<ContentConfig | null>(null);
   const [welcome, setWelcome] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -436,6 +483,12 @@ function ContentTab({ token }: { token: string }) {
   return (
     <div className="space-y-6 max-w-3xl">
 
+      {readOnly && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+          Content is managed by the Obsidian vault. Edit <code>.md</code> files there and trigger a sync.
+        </div>
+      )}
+
       {/* Welcome message */}
       <section className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
         <h3 className="text-sm font-semibold text-gray-700 mb-1">Welcome message</h3>
@@ -444,7 +497,8 @@ function ContentTab({ token }: { token: string }) {
           rows={3}
           value={welcome}
           onChange={(e) => setWelcome(e.target.value)}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
           placeholder="Hey! I'm Sebastiaan's digital twin…"
         />
         {/* Live preview */}
@@ -455,7 +509,7 @@ function ContentTab({ token }: { token: string }) {
         <div className="mt-3 flex items-center gap-3">
           <button
             onClick={() => void save("welcome", { welcome_message: welcome })}
-            disabled={savingSection === "welcome"}
+            disabled={savingSection === "welcome" || readOnly}
             className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {savingSection === "welcome" ? "Saving…" : "Save welcome message"}
@@ -472,14 +526,15 @@ function ContentTab({ token }: { token: string }) {
           rows={18}
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
           placeholder="You are Sebastiaan's digital twin…"
           spellCheck={false}
         />
         <div className="mt-3 flex items-center gap-3">
           <button
             onClick={() => void save("system", { system_prompt: systemPrompt })}
-            disabled={savingSection === "system"}
+            disabled={savingSection === "system" || readOnly}
             className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {savingSection === "system" ? "Saving…" : "Save system prompt"}
@@ -527,7 +582,7 @@ function ContentTab({ token }: { token: string }) {
         <div className="mt-4 flex items-center gap-3">
           <button
             onClick={() => void save("chips", { chips })}
-            disabled={savingSection === "chips"}
+            disabled={savingSection === "chips" || readOnly}
             className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {savingSection === "chips" ? "Saving…" : "Save chips"}
@@ -1641,6 +1696,8 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
   const [pendingKnowledgeNode, setPendingKnowledgeNode] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [vaultMode, setVaultMode] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ vault_enabled: boolean; vault_path: string | null; last_sync: any } | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -1655,6 +1712,21 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
       } else {
         setStatsError("Failed to load stats.");
       }
+    })();
+  }, [token]);
+
+  // Check vault mode
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/sync-status", { headers: { "X-Access-Token": token } });
+        if (res.ok) {
+          const data = await res.json();
+          setVaultMode(data.vault_enabled ?? false);
+          setSyncStatus(data);
+        }
+      } catch { /* ignore */ }
     })();
   }, [token]);
 
@@ -1698,6 +1770,7 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
           </div>
           <span className="font-semibold text-gray-900 text-sm">Admin — Digital Twin</span>
           <span className="text-xs text-gray-400 hidden sm:inline">personal tier</span>
+          {vaultMode && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full ml-2">Vault mode</span>}
         </div>
         <button onClick={onExit} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
           ← Back to chat
@@ -1729,6 +1802,7 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
                 token={token}
                 initialNodeId={pendingKnowledgeNode}
                 onNavigated={() => setPendingKnowledgeNode(null)}
+                readOnly={vaultMode}
               />
           )}
           {tab === "graph" && (
@@ -1745,11 +1819,11 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
         <main className="max-w-6xl mx-auto px-6 py-6">
           {tab === "overview" && (
             stats
-              ? <OverviewTab stats={stats} />
+              ? <OverviewTab stats={stats} vaultMode={vaultMode} syncStatus={syncStatus} token={token} />
               : <div className="text-gray-400 text-sm py-12 text-center">Loading stats…</div>
           )}
           {tab === "logs" && <LogsTab token={token} />}
-          {tab === "content" && <ContentTab token={token} />}
+          {tab === "content" && <ContentTab token={token} readOnly={vaultMode} />}
           {tab === "config" && <ConfigTab token={token} />}
           {tab === "roles" && <RolesTab token={token} />}
           {tab === "sessions" && <SessionsTab token={token} />}

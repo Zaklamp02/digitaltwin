@@ -141,7 +141,7 @@ function NewNotebookModal({ onClose, onCreated }: { onClose: () => void; onCreat
   );
 }
 
-export default function NotebookSidebar() {
+export default function NotebookSidebar({ readOnly }: { readOnly?: boolean }) {
   const {
     notebooks, currentNotebookId, selectNotebook, loadNotebooks,
     orphanNodes, loadingOrphans, loadOrphans, selectPage, currentPageId,
@@ -189,6 +189,7 @@ export default function NotebookSidebar() {
     <div className="w-48 flex-shrink-0 border-r border-gray-200 flex flex-col min-h-0 bg-white">
       <div className="px-3 py-2.5 border-b border-gray-200 flex items-center">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 flex-1">Notebooks</h3>
+        {!readOnly && (
         <button
           onClick={() => setShowNewModal(true)}
           className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
@@ -198,6 +199,7 @@ export default function NotebookSidebar() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
         </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto">
         {notebooks.map((nb, idx) => (

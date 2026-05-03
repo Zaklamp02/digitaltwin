@@ -109,7 +109,7 @@ function AddCrossLinkForm({ nodeId, onAdded, onCancel }: { nodeId: string; onAdd
 
 // ── Delete edge ───────────────────────────────────────────────────────────────
 
-function EdgeRow({ edge, onNavigate, onDelete }: { edge: EdgeInfo; onNavigate: () => void; onDelete: () => void }) {
+function EdgeRow({ edge, onNavigate, onDelete }: { edge: EdgeInfo; onNavigate: () => void; onDelete?: () => void }) {
   const isIncoming = edge.direction === "incoming";
   return (
     <div className="flex items-center gap-1 group">
@@ -123,6 +123,7 @@ function EdgeRow({ edge, onNavigate, onDelete }: { edge: EdgeInfo; onNavigate: (
         {isIncoming && <span className="text-xs font-medium text-gray-700 truncate flex-1 group-hover:text-indigo-600">{edge.other_title}</span>}
         {!isIncoming && <TypeBadge type={edge.other_type} />}
       </button>
+      {onDelete && (
       <button
         onClick={onDelete}
         className="w-4 h-4 flex items-center justify-center text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
@@ -130,6 +131,7 @@ function EdgeRow({ edge, onNavigate, onDelete }: { edge: EdgeInfo; onNavigate: (
       >
         ×
       </button>
+      )}
     </div>
   );
 }
@@ -138,11 +140,13 @@ export default function CrossLinksPanel({
   edges,
   nodeId,
   onRefresh,
+  readOnly,
 }: {
   edges: EdgeInfo[];
   nodeId: string;
   allNodes?: unknown[];
   onRefresh: () => void;
+  readOnly?: boolean;
 }) {
   const { selectPage } = useKnowledge();
   const [showAddForm, setShowAddForm] = useState(false);
@@ -204,6 +208,7 @@ export default function CrossLinksPanel({
           </svg>
         </button>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 flex-1">Cross-links</h3>
+        {!readOnly && (
         <button
           onClick={() => setShowAddForm(!showAddForm)}
           className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
@@ -213,6 +218,7 @@ export default function CrossLinksPanel({
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
         </button>
+        )}
       </div>
 
       {showAddForm && (
@@ -232,7 +238,7 @@ export default function CrossLinksPanel({
                 key={e.id}
                 edge={e}
                 onNavigate={() => selectPage(e.target_id)}
-                onDelete={() => handleDeleteEdge(e.id)}
+                onDelete={readOnly ? undefined : () => handleDeleteEdge(e.id)}
               />
             ))}
           </div>
@@ -248,7 +254,7 @@ export default function CrossLinksPanel({
                 key={e.id}
                 edge={e}
                 onNavigate={() => selectPage(e.source_id)}
-                onDelete={() => handleDeleteEdge(e.id)}
+                onDelete={readOnly ? undefined : () => handleDeleteEdge(e.id)}
               />
             ))}
           </div>

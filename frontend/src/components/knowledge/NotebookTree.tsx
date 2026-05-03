@@ -24,7 +24,7 @@ function TreeItem({
   onSelect: (id: string) => void;
   collapsedState: Record<string, boolean>;
   toggleCollapse: (id: string) => void;
-  onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
+  onContextMenu?: (e: React.MouseEvent, node: TreeNode) => void;
 }) {
   const hasChildren = node.children.length > 0;
   const collapsed = collapsedState[node.id] ?? (depth >= 2);
@@ -34,7 +34,7 @@ function TreeItem({
     <div>
       <button
         onClick={() => onSelect(node.id)}
-        onContextMenu={(e) => onContextMenu(e, node)}
+        onContextMenu={onContextMenu ? (e) => onContextMenu(e, node) : undefined}
         className={`w-full text-left flex items-center gap-1 py-1.5 pr-2 transition-colors group ${
           isSelected
             ? "bg-indigo-50 text-indigo-900"
@@ -268,7 +268,7 @@ function findSiblings(root: TreeNode, targetId: string): TreeNode[] | null {
   return null;
 }
 
-export default function NotebookTree() {
+export default function NotebookTree({ readOnly }: { readOnly?: boolean }) {
   const { currentTree, currentNotebookId, currentPageId, selectPage, refreshTree, refreshPage } = useKnowledge();
   const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>({});
   const [newPageParent, setNewPageParent] = useState<{ id: string; title: string; roles: string[] } | null>(null);
@@ -377,6 +377,7 @@ export default function NotebookTree() {
         >
           {currentTree.title}
         </button>
+        {!readOnly && (
         <button
           onClick={() => setNewPageParent({ id: currentTree.id, title: currentTree.title, roles: currentTree.roles })}
           className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
@@ -386,6 +387,7 @@ export default function NotebookTree() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
         </button>
+        )}
       </div>
 
       {/* Tree */}
@@ -399,7 +401,7 @@ export default function NotebookTree() {
             onSelect={selectPage}
             collapsedState={collapsedState}
             toggleCollapse={toggleCollapse}
-            onContextMenu={handleContextMenu}
+            onContextMenu={readOnly ? undefined : handleContextMenu}
           />
         ))}
         {currentTree.children.length === 0 && (

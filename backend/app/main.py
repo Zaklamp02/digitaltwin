@@ -22,6 +22,7 @@ from .teams_webhook import router as teams_router
 from .telegram_bot import TelegramBot, PublicTelegramBot
 from .image_indexer import index_images_from_memory
 from .translations import seed_translations, translate_stale, ensure_translations_table
+from .vault_sync import sync_vault_to_db
 
 log = logging.getLogger("ask-my-agent")
 
@@ -50,38 +51,43 @@ async def lifespan(app: FastAPI):
     log.info("starting ask-my-agent v%s (provider=%s, model=%s)",
              __version__, settings.llm_provider, settings.model_name)
 
-    # Knowledge graph (SQLite) — additive migration on every startup.
-    # New .md files in memory/ are picked up; existing nodes are left untouched.
+    # Knowledge graph (SQLite)
     knowledge = KnowledgeDB(settings.knowledge_db_path)
-    n = migrate_from_memory(settings.memory_path, knowledge)
-    if n:
-        log.info("memory sync: %d node(s) created or updated", n)
-    # Create extra nodes/edges not backed by markdown and apply graph tweaks
-    # (must run before resync_seed_edges so that notebook root nodes exist)
-    _customizations_ok = True
-    try:
-        apply_graph_customizations(knowledge)
-    except Exception as e:
-        _customizations_ok = False
-        log.warning("graph customizations failed (continuing): %s", e)
-    # Always resync canonical seed edges (safe — only touches deterministic IDs)
-    # Skip if customizations failed, to avoid deleting edges for missing nodes
-    if _customizations_ok:
-        try:
-            resync_seed_edges(knowledge)
-        except Exception as e:
-            log.warning("seed edge resync failed (continuing): %s", e)
-    else:
-        log.warning("skipping seed edge resync because graph customizations failed")
 
-    # Image indexing — caption any new *.png/jpg/webp in memory/ with OpenAI Vision.
-    # No-op if OPENAI_API_KEY is unset or no images found.
-    try:
-        n_images = index_images_from_memory(knowledge, settings.memory_path, settings.openai_api_key)
-        if n_images:
-            log.info("image indexer: %d image node(s) created or updated", n_images)
-    except Exception as e:
-        log.warning("image indexing failed (continuing): %s", e)
+    # --- Vault-based sync (new) or legacy memory sync ---
+    if settings.vault_path and settings.vault_path.exists():
+        log.info("vault mode: syncing from %s", settings.vault_path)
+        try:
+            result = sync_vault_to_db(settings.vault_path, knowledge)
+            log.info("vault sync result: %s", result.get("status", "unknown"))
+        except Exception as e:
+            log.warning("vault sync failed (continuing with existing DB): %s", e)
+    else:
+        # Legacy mode: migrate from memory/ directory
+        n = migrate_from_memory(settings.memory_path, knowledge)
+        if n:
+            log.info("memory sync: %d node(s) created or updated", n)
+        _customizations_ok = True
+        try:
+            apply_graph_customizations(knowledge)
+        except Exception as e:
+            _customizations_ok = False
+            log.warning("graph customizations failed (continuing): %s", e)
+        if _customizations_ok:
+            try:
+                resync_seed_edges(knowledge)
+            except Exception as e:
+                log.warning("seed edge resync failed (continuing): %s", e)
+        else:
+            log.warning("skipping seed edge resync because graph customizations failed")
+
+        # Image indexing — only in legacy mode
+        try:
+            n_images = index_images_from_memory(knowledge, settings.memory_path, settings.openai_api_key)
+            if n_images:
+                log.info("image indexer: %d image node(s) created or updated", n_images)
+        except Exception as e:
+            log.warning("image indexing failed (continuing): %s", e)
 
     # Translation system — seed all translatable keys, auto-translate stale ones
     try:

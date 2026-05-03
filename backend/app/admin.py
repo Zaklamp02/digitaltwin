@@ -46,6 +46,16 @@ def _personal(caller: Caller = Depends(caller_dep)) -> Caller:
     return caller
 
 
+def _reject_if_vault_mode():
+    """Dependency that blocks content-editing endpoints when vault mode is active."""
+    settings = get_settings()
+    if settings.vault_path and settings.vault_path.exists():
+        raise HTTPException(
+            status_code=409,
+            detail="Content is managed by the Obsidian vault. Edit .md files there and trigger a sync.",
+        )
+
+
 # ── log helpers ───────────────────────────────────────────────────────────────
 
 
@@ -183,6 +193,43 @@ async def get_stats(
         "timeline": timeline_out,
         "model_breakdown": dict(model_counts),
     }
+
+
+# ── vault sync ────────────────────────────────────────────────────────────────
+
+
+@router.get("/sync-status")
+async def get_sync_status(
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict[str, Any]:
+    """Return the last vault sync status."""
+    from .vault_sync import get_last_sync_info
+    settings = get_settings()
+    last_sync = get_last_sync_info(settings.knowledge_db_path)
+    vault_path = settings.vault_path
+    return {
+        "vault_enabled": vault_path is not None and vault_path.exists(),
+        "vault_path": str(vault_path) if vault_path else None,
+        "last_sync": last_sync,
+    }
+
+
+@router.post("/sync-trigger")
+async def trigger_sync(
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict[str, Any]:
+    """Manually trigger a vault → DB sync."""
+    from .vault_sync import sync_vault_to_db
+    settings = get_settings()
+    vault_path = settings.vault_path
+    if not vault_path or not vault_path.exists():
+        raise HTTPException(status_code=400, detail="Vault not configured or not found")
+    kb = request.app.state.knowledge
+    retriever = getattr(request.app.state, "retriever", None)
+    result = sync_vault_to_db(vault_path, kb, retriever)
+    return result
 
 
 # ── raw log viewer ────────────────────────────────────────────────────────────
@@ -417,7 +464,7 @@ class ContentPatchBody(BaseModel):
     chips: list[dict[str, str]] | None = None
 
 
-@router.patch("/content")
+@router.patch("/content", dependencies=[Depends(_reject_if_vault_mode)])
 async def patch_content_config(
     body: ContentPatchBody,
     request: Request,
@@ -784,7 +831,7 @@ class NodeCreateBody(BaseModel):
     metadata: dict[str, Any] = {}
 
 
-@router.post("/nodes")
+@router.post("/nodes", dependencies=[Depends(_reject_if_vault_mode)])
 async def create_node(
     body: NodeCreateBody,
     request: Request,
@@ -816,7 +863,7 @@ class NodeUpdateBody(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-@router.put("/nodes/{node_id}")
+@router.put("/nodes/{node_id}", dependencies=[Depends(_reject_if_vault_mode)])
 async def update_node(
     node_id: str,
     body: NodeUpdateBody,
@@ -834,7 +881,7 @@ async def update_node(
     return {"ok": True, "id": node.id, "updated_at": node.updated_at}
 
 
-@router.patch("/nodes/{node_id}/featured")
+@router.patch("/nodes/{node_id}/featured", dependencies=[Depends(_reject_if_vault_mode)])
 async def toggle_featured(
     node_id: str,
     request: Request,
@@ -853,7 +900,7 @@ async def toggle_featured(
     return {"ok": True, "featured": meta["featured"]}
 
 
-@router.delete("/nodes/{node_id}")
+@router.delete("/nodes/{node_id}", dependencies=[Depends(_reject_if_vault_mode)])
 async def delete_node(
     node_id: str,
     request: Request,
@@ -912,7 +959,7 @@ class EdgeCreateBody(BaseModel):
     roles: list[str] = ["public"]
 
 
-@router.post("/edges")
+@router.post("/edges", dependencies=[Depends(_reject_if_vault_mode)])
 async def create_edge(
     body: EdgeCreateBody,
     request: Request,
@@ -936,7 +983,7 @@ async def create_edge(
     return {"ok": True, "id": edge.id}
 
 
-@router.delete("/edges/{edge_id}")
+@router.delete("/edges/{edge_id}", dependencies=[Depends(_reject_if_vault_mode)])
 async def delete_edge(
     edge_id: str,
     request: Request,
@@ -1103,7 +1150,7 @@ async def get_notebook_tree(
 _ALLOWED_SUFFIXES = {".pdf", ".docx", ".doc", ".txt", ".md"}
 
 
-@router.post("/documents/upload")
+@router.post("/documents/upload", dependencies=[Depends(_reject_if_vault_mode)])
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
@@ -1268,7 +1315,7 @@ async def download_document_by_index(
     return FileResponse(str(full_path), filename=filename, media_type=mime)
 
 
-@router.post("/nodes/{node_id}/attach")
+@router.post("/nodes/{node_id}/attach", dependencies=[Depends(_reject_if_vault_mode)])
 async def attach_file_to_node(
     node_id: str,
     request: Request,
@@ -1328,7 +1375,7 @@ async def attach_file_to_node(
     return {"ok": True, "file_path": f"documents/{stored_name}", "size_bytes": len(content)}
 
 
-@router.delete("/nodes/{node_id}/attachment")
+@router.delete("/nodes/{node_id}/attachment", dependencies=[Depends(_reject_if_vault_mode)])
 async def detach_file_from_node(
     node_id: str,
     request: Request,
@@ -1746,7 +1793,7 @@ class MemoryChatBody(BaseModel):
     history: list[dict[str, Any]] = []
 
 
-@router.post("/memory-chat")
+@router.post("/memory-chat", dependencies=[Depends(_reject_if_vault_mode)])
 async def memory_chat(
     body: MemoryChatBody,
     request: Request,
