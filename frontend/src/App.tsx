@@ -3,10 +3,11 @@ import { Admin } from "./components/Admin";
 import { ChatStream } from "./components/ChatStream";
 import { ConversationEnd } from "./components/ConversationEnd";
 import { InputBar } from "./components/InputBar";
-import { MindscapeCanvas, GraphNode, GraphEdge } from "./components/MindscapeCanvas";
+import { MindscapeCanvas, GraphNode, GraphEdge, PILLAR_COLORS } from "./components/MindscapeCanvas";
 import { useChat } from "./hooks/useChat";
 import { useSTT } from "./hooks/useSTT";
 import { useTTS } from "./hooks/useTTS";
+import { useTranslation } from "./hooks/useTranslation";
 
 /* ══════════════════════════════════════════════════════════════════════
    Routing helpers
@@ -48,6 +49,10 @@ export default function App() {
   // Language
   const [language, setLanguage] = useState<"nl" | "en" | null>(() => {
     if (typeof window === "undefined") return null;
+    // URL param takes priority (for shareable links like ?lang=nl)
+    const params = new URLSearchParams(window.location.search);
+    const urlLang = params.get("lang");
+    if (urlLang === "nl" || urlLang === "en") return urlLang;
     const saved = localStorage.getItem("chatLanguage");
     return saved === "nl" || saved === "en" ? saved : null;
   });
@@ -109,6 +114,65 @@ export default function App() {
 
 const TWIN_NAME = "Basbot";
 
+/* ── Tuning Panel (shown when ?tune=1 in URL) ── */
+function TuningPanel() {
+  const [, forceUpdate] = useState(0);
+  const tune = (window as any).__graphTuning;
+  if (!tune) return null;
+
+  const sliders: { key: string; label: string; min: number; max: number; step: number }[] = [
+    { key: "posScale",      label: "Node spread",    min: 0.3, max: 2.5, step: 0.05 },
+    { key: "nodeScale",     label: "Node size",      min: 0.3, max: 3.0, step: 0.1 },
+    { key: "fontSize",      label: "Label size",     min: 6,   max: 20,  step: 0.5 },
+    { key: "childFontSize", label: "Child label",    min: 5,   max: 18,  step: 0.5 },
+    { key: "childSpread",   label: "Child spread",   min: 0.5, max: 5.0, step: 0.1 },
+    { key: "childRadius",   label: "Child radius",   min: 4,   max: 25,  step: 1 },
+    { key: "edgeWidth",     label: "Edge width",     min: 0.2, max: 4.0, step: 0.1 },
+    { key: "labelOffset",   label: "Label offset",   min: 5,   max: 30,  step: 1 },
+  ];
+
+  return (
+    <div
+      className="fixed bottom-16 right-2 z-[100] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-ink/10 dark:border-white/10 p-3 text-xs w-[210px] max-h-[60vh] overflow-y-auto"
+      style={{ scrollbarWidth: "thin" }}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+    >
+      <div className="font-bold text-ink dark:text-white mb-2">Graph Tuning</div>
+      {sliders.map(({ key, label, min, max, step }) => (
+        <div key={key} className="mb-2">
+          <div className="flex justify-between text-ink/60 dark:text-white/60">
+            <span>{label}</span>
+            <span className="font-mono">{tune[key].toFixed(1)}</span>
+          </div>
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={tune[key]}
+            onChange={(e) => {
+              tune[key] = parseFloat(e.target.value);
+              forceUpdate((n) => n + 1);
+            }}
+            className="w-full h-1.5 accent-teal-500"
+          />
+        </div>
+      ))}
+      <button
+        className="w-full mt-1 py-1.5 rounded-lg bg-accent/10 text-accent font-semibold hover:bg-accent/20 transition-colors"
+        onClick={() => {
+          const vals = sliders.map(({ key }) => `${key}: ${tune[key]}`).join("\n");
+          navigator.clipboard?.writeText(vals);
+          alert("Copied to clipboard:\n\n" + vals);
+        }}
+      >
+        Copy values
+      </button>
+    </div>
+  );
+}
+
 function Mindscape({
   token,
   dark,
@@ -124,6 +188,9 @@ function Mindscape({
   setLanguage: (v: "nl" | "en" | null) => void;
   onAdmin: () => void;
 }) {
+  /* ── Translations ── */
+  const { t, tn } = useTranslation(language, token);
+
   /* ── Graph data ── */
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
@@ -140,8 +207,16 @@ function Mindscape({
       .catch(() => {});
   }, [token]);
 
+  // Translate graph node titles when language or data changes
+  const translatedNodes = useMemo(() =>
+    graphNodes.map((n) => ({ ...n, title: tn(n.id, n.title) })),
+    [graphNodes, tn],
+  );
+
   /* ── Focus state ── */
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [focusedNodeTitle, setFocusedNodeTitle] = useState<string | null>(null);
+  const [focusedPillarId, setFocusedPillarId] = useState<string | null>(null);
   const [heroVisible, setHeroVisible] = useState(true);
   const [chatActive, setChatActive] = useState(false);
 
@@ -167,13 +242,17 @@ function Mindscape({
   }, []);
 
   const handleNodeFocus = useCallback(
-    (node: { id: string; title: string } | null) => {
+    (node: { id: string; title: string; pillarId?: string } | null) => {
       if (node) {
         setFocusedNodeId(node.id);
+        setFocusedNodeTitle(node.title);
+        setFocusedPillarId(node.pillarId ?? node.id);
         setHeroVisible(false);
         setChatActive(true);
       } else {
         setFocusedNodeId(null);
+        setFocusedNodeTitle(null);
+        setFocusedPillarId(null);
         if (inlineMessages.length === 0) {
           setHeroVisible(true);
           setChatActive(false);
@@ -185,6 +264,8 @@ function Mindscape({
 
   const goHome = useCallback(() => {
     setFocusedNodeId(null);
+    setFocusedNodeTitle(null);
+    setFocusedPillarId(null);
     setInlineMessages([]);
     setHeroVisible(true);
     setChatActive(false);
@@ -250,6 +331,7 @@ function Mindscape({
 
   /* ── Scroll area ref (canvas + messages) — auto-scroll to bottom ── */
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [scrolledToChat, setScrolledToChat] = useState(false);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -257,14 +339,30 @@ function Mindscape({
     }
   }, [inlineMessages]);
 
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const onScroll = () => setScrolledToChat(el.scrollTop > 60);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Tuning mode
+  const showTuning = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("tune") === "1";
+  }, []);
+
   return (
-    <div className="min-h-[100dvh] bg-paper dark:bg-gray-950 transition-colors duration-500">
+    <div className="h-[100dvh] bg-paper dark:bg-gray-950 transition-colors duration-500 snap-y snap-proximity overflow-y-auto">
+      {showTuning && <TuningPanel />}
       {/* ════════════════════════════════════════════════════════════
           HERO SECTION (full viewport, stacked layout)
           ════════════════════════════════════════════════════════════ */}
-      <div className="relative h-[100dvh] flex flex-col">
+      <div className="relative h-[100dvh] flex flex-col snap-start">
 
-        {/* ── Settings button (top-right, always visible) ── */}
+        {/* ── Settings button (floating over hero when hero visible) ── */}
+        {heroVisible && (
         <div ref={settingsRef} className="absolute top-4 right-4 z-[10]">
           <button
             onClick={() => setSettingsOpen((v) => !v)}
@@ -284,7 +382,7 @@ function Mindscape({
                 onClick={() => setDark(!dark)}
                 className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-ink/5 dark:hover:bg-white/5 transition-colors text-ink dark:text-white"
               >
-                <span>{dark ? "Light mode" : "Dark mode"}</span>
+                <span>{dark ? t("ui.light_mode") : t("ui.dark_mode")}</span>
                 {dark ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
@@ -304,7 +402,7 @@ function Mindscape({
                 onClick={() => setLanguage(language === "nl" ? "en" : "nl")}
                 className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-ink/5 dark:hover:bg-white/5 transition-colors text-ink dark:text-white"
               >
-                <span>{language === "nl" ? "Switch to English" : "Switch to Dutch"}</span>
+                <span>{language === "nl" ? t("ui.switch_to_english") : t("ui.switch_to_dutch")}</span>
                 <span className="text-xs font-semibold text-ink/40 dark:text-white/40">{language === "nl" ? "NL" : "EN"}</span>
               </button>
 
@@ -312,13 +410,14 @@ function Mindscape({
             </div>
           )}
         </div>
+        )}
 
         {/* ── Compact Header (slides in when hero leaves) ── */}
         <div
           className={`shrink-0 z-[3] flex items-center justify-between px-4
             bg-white/75 dark:bg-gray-950/75 backdrop-blur-xl border-b border-ink/[0.06] dark:border-white/[0.06]
-            transition-all duration-600 ease-out overflow-hidden
-            ${heroVisible ? "max-h-0 opacity-0 pointer-events-none" : "max-h-[60px] opacity-100 py-2.5"}`}
+            transition-all duration-600 ease-out
+            ${heroVisible ? "max-h-0 opacity-0 pointer-events-none overflow-hidden" : "max-h-[60px] opacity-100 py-2.5"}`}
         >
           <div className="flex items-center gap-2.5">
             <img
@@ -335,10 +434,53 @@ function Mindscape({
             </span>
           </div>
           <div className="flex items-center gap-4 text-[0.7rem]">
-            <a href="#blog-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">Blog</a>
-            <a href="#projects-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">Projects</a>
-            <a href="#about-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">About</a>
-            <a href="https://linkedin.com/in/svdenboer" target="_blank" rel="noopener noreferrer" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">LinkedIn</a>
+            <a href="#blog-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.blog")}</a>
+            <a href="#projects-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.projects")}</a>
+            <a href="#about-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.about")}</a>
+            <a href="https://linkedin.com/in/svdenboer" target="_blank" rel="noopener noreferrer" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.linkedin")}</a>
+            {/* Settings inside navbar */}
+            <div ref={!heroVisible ? settingsRef : undefined} className="relative">
+              <button
+                onClick={() => setSettingsOpen((v) => !v)}
+                className="w-7 h-7 rounded-full border border-ink/10 dark:border-white/10 bg-white/60 dark:bg-gray-950/60 flex items-center justify-center hover:border-accent transition-all"
+                title="Settings"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink/50 dark:text-white/50">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+              {settingsOpen && !heroVisible && (
+                <div className="absolute top-9 right-0 w-56 rounded-xl border border-ink/[0.06] dark:border-white/10 bg-white dark:bg-gray-900 shadow-xl p-3 text-sm z-50">
+                  <button
+                    onClick={() => setDark(!dark)}
+                    className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-ink/5 dark:hover:bg-white/5 transition-colors text-ink dark:text-white"
+                  >
+                    <span>{dark ? t("ui.light_mode") : t("ui.dark_mode")}</span>
+                    {dark ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                        <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setLanguage(language === "nl" ? "en" : "nl")}
+                    className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-ink/5 dark:hover:bg-white/5 transition-colors text-ink dark:text-white"
+                  >
+                    <span>{language === "nl" ? t("ui.switch_to_english") : t("ui.switch_to_dutch")}</span>
+                    <span className="text-xs font-semibold text-ink/40 dark:text-white/40">{language === "nl" ? "NL" : "EN"}</span>
+                  </button>
+                  <div className="h-px bg-ink/[0.06] dark:bg-white/10 my-1.5" />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -348,10 +490,10 @@ function Mindscape({
           className="flex-1 min-h-0 overflow-y-auto flex flex-col"
           style={{ scrollbarWidth: "none" }}
         >
-          {/* Canvas wrapper — fills viewport minus input bar, shrinks never */}
-          <div className="relative shrink-0" style={{ touchAction: "pan-y", height: "calc(100dvh - 60px)" }}>
+          {/* Canvas wrapper — sticky so graph remains visible behind chat */}
+          <div className="sticky top-0 shrink-0 z-[0]" style={{ touchAction: "pan-y", height: "100%" }}>
             <MindscapeCanvas
-              nodes={graphNodes}
+              nodes={translatedNodes}
               edges={graphEdges}
               dark={dark}
               onNodeFocus={handleNodeFocus}
@@ -376,13 +518,13 @@ function Mindscape({
                   </h1>
                 </div>
                 <p className="mt-2.5 text-[clamp(0.85rem,1.3vw,1rem)] text-ink/50 dark:text-white/50 max-w-[420px] leading-relaxed">
-                  Creative adventurer. Nerd with MBA.
+                  {t("ui.subtitle")}
                 </p>
                 <div className="flex gap-5 mt-4">
                   {[
-                    { label: "LinkedIn", href: "https://linkedin.com/in/svdenboer" },
-                    { label: "GitHub", href: "https://github.com/Zaklamp02" },
-                    { label: "Email", href: "mailto:sebastiaandenboer@gmail.com" },
+                    { label: t("ui.linkedin"), href: "https://linkedin.com/in/svdenboer" },
+                    { label: t("ui.github"), href: "https://github.com/Zaklamp02" },
+                    { label: t("ui.email"), href: "mailto:sebastiaandenboer@gmail.com" },
                   ].map((link) => (
                     <a
                       key={link.label}
@@ -398,7 +540,7 @@ function Mindscape({
                     href="#about-section"
                     className="text-[0.78rem] text-ink/20 dark:text-white/20 no-underline hover:text-ink/40 dark:hover:text-white/40 transition-colors italic"
                   >
-                    About ↓
+                    {t("ui.about_arrow")}
                   </a>
                 </div>
               </div>
@@ -410,13 +552,14 @@ function Mindscape({
                 ${heroVisible ? "animate-fade-pulse" : "opacity-0"} transition-opacity duration-500`}
               style={{ writingMode: "vertical-rl", letterSpacing: "0.1em" }}
             >
-              scroll for more
+              {t("ui.scroll_for_more")}
             </span>
           </div>
 
-          {/* ── Chat Messages (below canvas, in normal flow) ── */}
+          {/* ── Chat Messages (transparent bg — graph/particles visible behind) ── */}
           {inlineMessages.length > 0 && (
-            <div className="flex flex-col gap-2.5 px-6 py-4 max-w-[600px]">
+            <div className="relative z-[1] flex flex-col gap-2.5 px-6 py-4 max-w-[600px] min-h-[calc(100dvh-120px)]">
+
               {inlineMessages.map((msg) => (
                 <div
                   key={msg.id}
@@ -447,12 +590,33 @@ function Mindscape({
           )}
         </div>
 
-        {/* ── Input Bar ── */}
-        <div className="shrink-0 z-[2] px-6 pb-4 pt-2">
-          <div className="flex items-center border border-ink/20 dark:border-white/20 rounded-2xl px-3.5 py-2.5 bg-white/80 dark:bg-gray-950/80 backdrop-blur-xl max-w-[520px] focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent/[0.08] transition-all">
+        {/* ── Input Bar (floats over graph, doesn't consume layout space) ── */}
+        <div className="absolute bottom-0 inset-x-0 z-[2] px-6 pb-3 pt-1 pointer-events-none">
+          {/* Suggestion card — only visible on graph view (not when scrolled to chat) */}
+          {focusedNodeTitle && !chat.loading && !scrolledToChat && (() => {
+            const pc = PILLAR_COLORS[focusedPillarId ?? ""] ?? [45, 212, 191];
+            return (
+              <button
+                onClick={() => handleSend(`${t("ui.tell_me_about")} ${focusedNodeTitle}`)}
+                className="pointer-events-auto group flex items-center justify-between w-full max-w-[520px] mb-1.5 px-4 py-2 rounded-xl border text-left text-sm font-medium transition-all animate-slide-up cursor-pointer hover:scale-[1.01] active:scale-[0.99] backdrop-blur-md"
+                style={{
+                  borderColor: `rgba(${pc[0]},${pc[1]},${pc[2]},0.25)`,
+                  backgroundColor: `rgba(${pc[0]},${pc[1]},${pc[2]},0.08)`,
+                  color: `rgb(${pc[0]},${pc[1]},${pc[2]})`,
+                }}
+              >
+                <span>{t("ui.tell_me_about")} {focusedNodeTitle}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 ml-2 group-hover:translate-x-0.5 transition-transform">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </button>
+            );
+          })()}
+          <div className="pointer-events-auto flex items-center border border-ink/20 dark:border-white/20 rounded-2xl px-3.5 py-2.5 bg-white/80 dark:bg-gray-950/80 backdrop-blur-xl max-w-[520px] focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent/[0.08] transition-all">
             <input
               type="text"
-              placeholder="Ask me anything!"
+              placeholder={t("ui.ask_anything")}
               className="flex-1 border-none outline-none font-[inherit] text-[0.95rem] text-ink dark:text-white bg-transparent placeholder:text-ink/20 dark:placeholder:text-white/20"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && e.currentTarget.value.trim()) {
@@ -504,9 +668,9 @@ function Mindscape({
           ═══════════════════════════════════════════════════════════ */}
 
       {/* ── Blog / Curiosa ── */}
-      <section id="blog-section" className="max-w-[720px] mx-auto px-6 pt-16 pb-8">
+      <section id="blog-section" className="max-w-[720px] mx-auto px-6 pt-16 pb-8 snap-start">
         <h2 className="text-[0.7rem] tracking-[0.15em] uppercase text-ink/20 dark:text-white/20 mb-8">
-          The Curiosa
+          {t("ui.the_curiosa")}
         </h2>
         <div className="space-y-0">
           {[
@@ -525,13 +689,13 @@ function Mindscape({
             </div>
           ))}
         </div>
-        <a href="#" className="inline-block mt-6 text-[0.8rem] text-ink/20 dark:text-white/20 pointer-events-none">More posts coming soon</a>
+        <a href="#" className="inline-block mt-6 text-[0.8rem] text-ink/20 dark:text-white/20 pointer-events-none">{t("ui.more_posts_coming")}</a>
       </section>
 
       {/* ── Projects ── */}
-      <section id="projects-section" className="max-w-[720px] mx-auto px-6 pb-8">
+      <section id="projects-section" className="max-w-[720px] mx-auto px-6 pb-8 snap-start">
         <h2 className="text-[0.7rem] tracking-[0.15em] uppercase text-ink/20 dark:text-white/20 mb-8">
-          Projects
+          {t("ui.projects_heading")}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
@@ -556,9 +720,9 @@ function Mindscape({
       </section>
 
       {/* ── About ── */}
-      <section id="about-section" className="max-w-[720px] mx-auto px-6 py-16">
+      <section id="about-section" className="max-w-[720px] mx-auto px-6 py-16 snap-start">
         <h2 className="text-[0.7rem] tracking-[0.15em] uppercase text-ink/20 dark:text-white/20 mb-8">
-          About
+          {t("about.heading")}
         </h2>
         <div className="flex flex-col sm:flex-row gap-8 items-center sm:items-start">
           <img
@@ -567,19 +731,15 @@ function Mindscape({
             className="w-[120px] h-[120px] sm:w-[140px] sm:h-[140px] rounded-full sm:rounded-xl object-cover border-2 border-ink/[0.06] dark:border-white/10 shadow-lg shrink-0 hover:border-accent transition-colors"
           />
           <div className="text-center sm:text-left">
-            <h3 className="text-lg font-semibold text-ink dark:text-white">Hi, I'm Sebastiaan</h3>
+            <h3 className="text-lg font-semibold text-ink dark:text-white">{t("about.hi")}</h3>
             <p className="text-[0.88rem] text-ink/50 dark:text-white/50 leading-relaxed mt-2">
-              Director of Data Science &amp; AI by day, compulsive builder by night.
-              I lead teams that turn messy data into decisions that actually matter —
-              from fraud detection to supply chain optimisation.
+              {t("about.p1")}
             </p>
             <p className="text-[0.88rem] text-ink/50 dark:text-white/50 leading-relaxed mt-3">
-              When I'm not wrangling models, I'm building furniture from scratch (full kitchen, done),
-              running (slowly), or hosting overly competitive board game nights.
+              {t("about.p2")}
             </p>
             <p className="text-[0.88rem] text-ink/50 dark:text-white/50 leading-relaxed mt-3">
-              This site is my digital twin — an AI agent trained on my professional and personal knowledge.
-              Ask {TWIN_NAME} anything, or explore the mind map above.
+              {t("about.p3_prefix")} {TWIN_NAME} {t("about.p3_suffix")}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-4 justify-center sm:justify-start">
               {["AI Strategy", "Data Science", "Leadership", "Woodworking", "MBA", "Python", "LLMs"].map((tag) => (
@@ -592,7 +752,7 @@ function Mindscape({
 
       {/* ── Footer ── */}
       <footer className="text-center py-12 text-[0.7rem] text-ink/20 dark:text-white/20">
-        © {new Date().getFullYear()} Sebastiaan den Boer · Built with too many Docker containers
+        © {new Date().getFullYear()} Sebastiaan den Boer · {t("about.footer")}
       </footer>
     </div>
   );
@@ -622,6 +782,8 @@ function FullChat({
   const [inputMode, setInputMode] = useState<"voice" | "text">("text");
   const [injectedInput, setInjectedInput] = useState<string>("");
 
+  const { t } = useTranslation(language, token);
+
   const ttsEnabled = inputMode === "voice";
   const tts = useTTS(token, ttsEnabled);
 
@@ -644,9 +806,9 @@ function FullChat({
 
   const headerStatus = useMemo(() => {
     if (chat.error) return <span className="text-red-500">Error: {chat.error}</span>;
-    if (chat.loading) return <span className="text-ink/40 dark:text-white/40">Thinking…</span>;
-    if (stt.transcribing) return <span className="text-ink/40 dark:text-white/40">Transcribing…</span>;
-    if (stt.recording) return <span className="text-red-500">● recording</span>;
+    if (chat.loading) return <span className="text-ink/40 dark:text-white/40">{t("ui.thinking")}</span>;
+    if (stt.transcribing) return <span className="text-ink/40 dark:text-white/40">{t("ui.transcribing")}</span>;
+    if (stt.recording) return <span className="text-red-500">● {t("ui.recording")}</span>;
     return null;
   }, [chat.error, chat.loading, stt.transcribing, stt.recording]);
 
@@ -692,16 +854,16 @@ function FullChat({
         <button
           onClick={() => setLanguage(language === "nl" ? "en" : "nl")}
           className="h-8 px-2.5 rounded-full border border-ink/10 dark:border-white/10 bg-white dark:bg-white/5 flex items-center justify-center text-xs font-semibold text-ink/60 dark:text-white/60 hover:text-accent dark:hover:text-accent transition-colors"
-          aria-label={language === "nl" ? "Switch to English" : "Switch to Dutch"}
-          title={language === "nl" ? "Switch to English" : "Switch to Dutch"}
+          aria-label={language === "nl" ? t("ui.switch_to_english") : t("ui.switch_to_dutch")}
+          title={language === "nl" ? t("ui.switch_to_english") : t("ui.switch_to_dutch")}
         >
           {language === "nl" ? "NL" : "EN"}
         </button>
         <button
           onClick={() => setDark(!dark)}
           className="h-8 w-8 rounded-full border border-ink/10 dark:border-white/10 bg-white dark:bg-white/5 flex items-center justify-center text-ink/60 dark:text-white/60 hover:text-accent dark:hover:text-accent transition-colors"
-          aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-          title={dark ? "Light mode" : "Dark mode"}
+          aria-label={dark ? t("ui.light_mode") : t("ui.dark_mode")}
+          title={dark ? t("ui.light_mode") : t("ui.dark_mode")}
         >
           {dark ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -724,10 +886,11 @@ function FullChat({
         onReplay={(text) => tts.replay(text)}
         onSend={(text) => { void chat.send(text); }}
         token={token}
+        t={t}
       />
 
       {chat.conversationEnded ? (
-        <ConversationEnd message={chat.conversationEndMessage} onNew={newConversation} />
+        <ConversationEnd message={chat.conversationEndMessage} onNew={newConversation} t={t} />
       ) : (
         <InputBar
           disabled={chat.conversationEnded}
@@ -735,12 +898,13 @@ function FullChat({
           recording={stt.recording}
           transcribing={stt.transcribing}
           injected={injectedInput}
-          onSend={(t) => {
+          onSend={(text) => {
             setInputMode("text");
             setInjectedInput("");
-            void chat.send(t);
+            void chat.send(text);
           }}
           onMic={handleMic}
+          t={t}
         />
       )}
     </div>

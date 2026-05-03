@@ -90,6 +90,52 @@ const RADII: Record<string, number> = {
   community: 19, personality: 19, "nb-work": 22,
 };
 
+/** Pillar color mapping — each root node group gets a distinct color */
+export const PILLAR_COLORS: Record<string, [number, number, number]> = {
+  career:      [245, 158, 11],   // amber
+  education:   [167, 139, 250],  // purple
+  hobbies:     [52, 211, 153],   // green
+  community:   [56, 189, 248],   // sky
+  personality: [244, 114, 182],  // pink
+  "nb-work":   [250, 204, 21],   // yellow
+};
+
+/* ── Tuning: live-adjustable parameters exposed on window ── */
+export interface GraphTuning {
+  posScale: number;      // multiplier on POSITIONS coords (spread of root nodes)
+  nodeScale: number;     // multiplier on node radii
+  fontSize: number;      // base font size for root node labels
+  childFontSize: number; // base font size for child labels
+  childSpread: number;   // spread multiplier for child ring (was hardcoded 2.4)
+  childDx: number;       // base dx distance for children (was 45)
+  childDy: number;       // base dy distance for children (was 30)
+  childRadius: number;   // child node radius (was 10)
+  edgeWidth: number;     // edge line width multiplier
+  labelOffset: number;   // px below node for label
+}
+
+const DEFAULT_TUNING: GraphTuning = {
+  posScale: 0.85,
+  nodeScale: 1.8,
+  fontSize: 17,
+  childFontSize: 11,
+  childSpread: 2.5,
+  childDx: 45,
+  childDy: 30,
+  childRadius: 17,
+  edgeWidth: 2.7,
+  labelOffset: 25,
+};
+
+// Expose on window for the tuning panel
+if (typeof window !== "undefined") {
+  (window as any).__graphTuning = { ...DEFAULT_TUNING };
+}
+
+function getTuning(): GraphTuning {
+  return (typeof window !== "undefined" && (window as any).__graphTuning) || DEFAULT_TUNING;
+}
+
 /** Compute default (unfocused) zoom so all root nodes fit horizontally.
  *  Root positions span ±230 + node radius ≈ 254 world-units from centre. */
 function getDefaultZoom(canvasW: number): number {
@@ -150,15 +196,48 @@ function buildLayout(
   const topNodes: LayoutNode[] = [];
   const topIds = new Set<string>();
 
-  // Auto-position featured nodes that don't have a hardcoded position
+  // Auto-position featured nodes in gaps between existing positioned nodes
   const unpositioned = featuredNodes.filter((n) => !POSITIONS[n.id]);
   const RING_R = 180;
-  for (let i = 0; i < unpositioned.length; i++) {
-    const angle = (i / unpositioned.length) * Math.PI * 2 - Math.PI / 2;
-    POSITIONS[unpositioned[i].id] = [
-      Math.round(Math.cos(angle) * RING_R),
-      Math.round(Math.sin(angle) * RING_R),
-    ];
+  if (unpositioned.length > 0) {
+    const usedAngles = featuredNodes
+      .filter((n) => POSITIONS[n.id] && !unpositioned.includes(n))
+      .map((n) => Math.atan2(POSITIONS[n.id]![1], POSITIONS[n.id]![0]));
+    usedAngles.sort((a, b) => a - b);
+
+    if (usedAngles.length === 0) {
+      for (let i = 0; i < unpositioned.length; i++) {
+        const angle = (i / unpositioned.length) * Math.PI * 2 - Math.PI / 2;
+        POSITIONS[unpositioned[i].id] = [
+          Math.round(Math.cos(angle) * RING_R),
+          Math.round(Math.sin(angle) * RING_R),
+        ];
+      }
+    } else {
+      // Find angular gaps between existing nodes, place auto nodes in largest gaps
+      const gaps: { mid: number; size: number }[] = [];
+      for (let i = 0; i < usedAngles.length; i++) {
+        const a = usedAngles[i];
+        const b = usedAngles[(i + 1) % usedAngles.length];
+        let size = b - a;
+        if (size <= 0) size += Math.PI * 2;
+        gaps.push({ mid: a + size / 2, size });
+      }
+      gaps.sort((a, b) => b.size - a.size);
+
+      for (let i = 0; i < unpositioned.length; i++) {
+        const gap = gaps[i % gaps.length];
+        // If multiple nodes share a gap, spread them within it
+        const subCount = unpositioned.filter((_, j) => (j % gaps.length) === (i % gaps.length)).length;
+        const subIdx = Math.floor(i / gaps.length);
+        const offset = subCount > 1 ? (subIdx / (subCount - 1) - 0.5) * gap.size * 0.5 : 0;
+        const angle = gap.mid + offset;
+        POSITIONS[unpositioned[i].id] = [
+          Math.round(Math.cos(angle) * RING_R),
+          Math.round(Math.sin(angle) * RING_R),
+        ];
+      }
+    }
   }
 
   for (const n of featuredNodes) {
@@ -279,7 +358,7 @@ interface Props {
   nodes: GraphNode[];
   edges: GraphEdge[];
   dark: boolean;
-  onNodeFocus: (node: { id: string; title: string } | null) => void;
+  onNodeFocus: (node: { id: string; title: string; pillarId?: string } | null) => void;
   focusedNodeId: string | null;
 }
 
@@ -315,6 +394,8 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
     lastDiveTime: 0,
     /** When true, the click handler is managing the transition — skip sync effect */
     skipSync: false,
+    /** Current root pillar ID for color resolution */
+    currentPillarId: null as string | null,
   });
 
   const layoutRef = useRef<LayoutNode[]>([]);
@@ -376,11 +457,12 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       if (node) {
         const wp = nodeWorldPos(node, s.drifts, layoutRef.current, s.time);
         s.camTarget.x = wp.x;
-        s.camTarget.y = wp.y - 20;
+        s.camTarget.y = wp.y - 80;
         s.camTarget.z = getFocusZoom(s.W || window.innerWidth);
       }
     } else {
       focusedRef.current = null;
+      s.currentPillarId = null;
       // Reset dive stack when unfocusing from outside
       if (s.diveStack.length > 0) {
         s.diveStack = [];
@@ -435,8 +517,13 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const accent = (): [number, number, number] => {
-      return dark ? [45, 212, 191] : [15, 118, 110];
+    const tealAccent: [number, number, number] = dark ? [45, 212, 191] : [15, 118, 110];
+
+    const getNodeColor = (nodeId: string): [number, number, number] => {
+      if (PILLAR_COLORS[nodeId]) return PILLAR_COLORS[nodeId];
+      const s = stateRef.current;
+      if (s.currentPillarId && PILLAR_COLORS[s.currentPillarId]) return PILLAR_COLORS[s.currentPillarId];
+      return tealAccent;
     };
 
     const animate = () => {
@@ -473,8 +560,9 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
         y: (sy - H / 2) / cam.z + cam.y,
       });
 
-      const [ar, ag, ab] = accent();
+      const [ar, ag, ab] = tealAccent;
       const wm = toWorld(mouse.x, mouse.y);
+      const tune = getTuning();
 
       ctx.clearRect(0, 0, W, H);
 
@@ -507,74 +595,76 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
           const fi = lnodes.indexOf(focused);
           fade = (i === fi || j === fi) ? 1 : 0.15;
         }
-        const alpha = (0.10 + prox * 0.18) * fade;
+        const alpha = (0.14 + prox * 0.20) * fade;
         const cpx = (a.x + b.x) / 2 + (a.y - b.y) * 0.08;
         const cpy = (a.y + b.y) / 2 - (a.x - b.x) * 0.08;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(cpx, cpy, b.x, b.y);
         ctx.strokeStyle = `rgba(${ar},${ag},${ab},${alpha})`;
-        ctx.lineWidth = 1 * cam.z; ctx.stroke();
+        ctx.lineWidth = tune.edgeWidth * cam.z; ctx.stroke();
       }
 
       // ── Nodes ──
       let newHovered: LayoutNode | null = null;
       for (const node of lnodes) {
+        const [nr, ng, nb] = getNodeColor(node.id);
         const wp = nodeWorldPos(node, drifts, lnodes, s.time);
         const sp = toScreen(wp.x, wp.y);
-        const sr = node.r * cam.z;
+        const sr = node.r * tune.nodeScale * cam.z;
         const dm = Math.hypot(sp.x - mouse.x, sp.y - mouse.y);
         const isHover = dm < sr + 14 * cam.z && !s.dragging;
         if (isHover && node !== focused) newHovered = node;
 
         let dim = 1;
-        if (focused && focused !== node) dim = 0.2;
+        if (focused && focused !== node) dim = 0.28;
         if (focused === node) dim = 1.3;
-        const ga = (isHover ? 1 : Math.max(0, 1 - dm / (200 * cam.z)) * 0.25) * dim;
+        const ga = (isHover ? 1 : Math.max(0, 1 - dm / (200 * cam.z)) * 0.3) * dim;
 
         // Glow
         if (ga > 0.02) {
           const grad = ctx.createRadialGradient(sp.x, sp.y, sr * 0.5, sp.x, sp.y, sr + 28 * cam.z * ga);
-          grad.addColorStop(0, `rgba(${ar},${ag},${ab},${0.10 * ga})`);
-          grad.addColorStop(1, `rgba(${ar},${ag},${ab},0)`);
+          grad.addColorStop(0, `rgba(${nr},${ng},${nb},${0.10 * ga})`);
+          grad.addColorStop(1, `rgba(${nr},${ng},${nb},0)`);
           ctx.beginPath(); ctx.arc(sp.x, sp.y, sr + 28 * cam.z * ga, 0, Math.PI * 2);
           ctx.fillStyle = grad; ctx.fill();
         }
 
         const r = sr + (isHover && !focused ? 3 * cam.z : 0) + (focused === node ? 5 * cam.z : 0);
         ctx.beginPath(); ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${ar},${ag},${ab},${(0.06 + ga * 0.10) * dim})`;
+        ctx.fillStyle = `rgba(${nr},${ng},${nb},${(0.08 + ga * 0.12) * dim})`;
         ctx.fill();
-        ctx.strokeStyle = `rgba(${ar},${ag},${ab},${(0.22 + ga * 0.35) * dim})`;
+        ctx.strokeStyle = `rgba(${nr},${ng},${nb},${(0.28 + ga * 0.38) * dim})`;
         ctx.lineWidth = (focused === node ? 1.8 : 1) * cam.z;
         ctx.stroke();
 
         // Center dot
         ctx.beginPath();
         ctx.arc(sp.x, sp.y, (2.8 + ga * 1.5) * cam.z, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${ar},${ag},${ab},${(0.35 + ga * 0.45) * dim})`;
+        ctx.fillStyle = `rgba(${nr},${ng},${nb},${(0.40 + ga * 0.45) * dim})`;
         ctx.fill();
 
         // Label
-        const fs = ((isHover || focused === node) ? 12 : 10.5) * cam.z;
+        const fs = ((isHover || focused === node) ? tune.fontSize + 1.5 : tune.fontSize) * cam.z;
         ctx.font = `${(isHover || focused === node) ? "600" : "500"} ${fs}px Inter,sans-serif`;
-        ctx.fillStyle = `rgba(${ar},${ag},${ab},${(0.35 + ga * 0.55) * dim})`;
+        ctx.fillStyle = `rgba(${nr},${ng},${nb},${(0.40 + ga * 0.55) * dim})`;
         ctx.textAlign = "center";
-        ctx.fillText(node.title, sp.x, sp.y + r + 15 * cam.z);
+        ctx.fillText(node.title, sp.x, sp.y + r + tune.labelOffset * cam.z);
       }
       s.hoveredNode = newHovered;
 
       // ── Children ──
       let newHoveredChild: ChildNode | null = null;
       if (focused && s.childExpandT > 0.01) {
+        const [fr, fg, fb] = getNodeColor(focused.id);
         const pw = nodeWorldPos(focused, drifts, lnodes, s.time);
         const t = s.childExpandT;
         const ringAlpha = s.ringFadeT;
-        const spread = 2.4;
+        const spread = tune.childSpread;
         for (const child of focused.children) {
           const cwx = pw.x + child.dx * spread * t;
           const cwy = pw.y + child.dy * spread * t;
           const cs = toScreen(cwx, cwy);
           const ps = toScreen(pw.x, pw.y);
-          const cr = child.r * cam.z * t;
+          const cr = tune.childRadius * cam.z * t;
 
           // Hit test for hover
           const cdm = Math.hypot(cs.x - mouse.x, cs.y - mouse.y);
@@ -585,39 +675,32 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
 
           // Edge from parent to child
           ctx.beginPath(); ctx.moveTo(ps.x, ps.y); ctx.lineTo(cs.x, cs.y);
-          ctx.strokeStyle = `rgba(${ar},${ag},${ab},${0.15 * fadeAlpha})`;
-          ctx.lineWidth = 0.8 * cam.z; ctx.stroke();
+          ctx.strokeStyle = `rgba(${fr},${fg},${fb},${0.15 * fadeAlpha})`;
+          ctx.lineWidth = 0.8 * tune.edgeWidth * cam.z; ctx.stroke();
 
           // Child circle
           const childR = cr + (isChildHover ? 3 * cam.z : 0);
           ctx.beginPath(); ctx.arc(cs.x, cs.y, childR, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${ar},${ag},${ab},${(isChildHover ? 0.14 : 0.07) * fadeAlpha})`;
+          ctx.fillStyle = `rgba(${fr},${fg},${fb},${(isChildHover ? 0.14 : 0.07) * fadeAlpha})`;
           ctx.fill();
-          ctx.strokeStyle = `rgba(${ar},${ag},${ab},${(isChildHover ? 0.5 : 0.28) * fadeAlpha})`;
+          ctx.strokeStyle = `rgba(${fr},${fg},${fb},${(isChildHover ? 0.5 : 0.28) * fadeAlpha})`;
           ctx.lineWidth = (isChildHover ? 1.2 : 0.7) * cam.z; ctx.stroke();
 
-          // Label
-          const cfs = (isChildHover ? 10.5 : 9.5) * cam.z * Math.min(t * 1.5, 1);
+          // Label — positioned away from center node
+          const cfs = (isChildHover ? tune.childFontSize + 1 : tune.childFontSize) * cam.z * Math.min(t * 1.5, 1);
           ctx.font = `${isChildHover ? "600" : "500"} ${cfs}px Inter,sans-serif`;
-          ctx.fillStyle = `rgba(${ar},${ag},${ab},${(isChildHover ? 0.8 : 0.55) * fadeAlpha})`;
+          ctx.fillStyle = `rgba(${fr},${fg},${fb},${(isChildHover ? 0.8 : 0.55) * fadeAlpha})`;
           ctx.textAlign = "center";
-          ctx.fillText(child.title, cs.x, cs.y + childR + 12 * cam.z);
-
-          // Child count badge (if has sub-children)
-          if (child.childCount > 0 && fadeAlpha > 0.3) {
-            const badgeR = 6 * cam.z;
-            const bx = cs.x + childR * 0.7;
-            const by = cs.y - childR * 0.7;
-            ctx.beginPath(); ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(${ar},${ag},${ab},${0.2 * fadeAlpha})`;
-            ctx.fill();
-            ctx.font = `600 ${7 * cam.z}px Inter,sans-serif`;
-            ctx.fillStyle = `rgba(${ar},${ag},${ab},${0.7 * fadeAlpha})`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(String(child.childCount), bx, by);
-            ctx.textBaseline = "alphabetic";
+          // Place label on the side facing away from the parent
+          const labelBelow = child.dy >= 0;
+          if (labelBelow) {
+            ctx.textBaseline = "top";
+            ctx.fillText(child.title, cs.x, cs.y + childR + 4 * cam.z);
+          } else {
+            ctx.textBaseline = "bottom";
+            ctx.fillText(child.title, cs.x, cs.y - childR - 4 * cam.z);
           }
+          ctx.textBaseline = "alphabetic";
         }
       }
       s.hoveredChild = newHoveredChild;
@@ -653,7 +736,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       // Check if a child node was clicked (only when focused/dived)
       if (focused && s.childExpandT > 0.5) {
         const pw = nodeWorldPos(focused, s.drifts, lnodes, s.time);
-        const spread = 2.4;
+        const spread = getTuning().childSpread;
         for (const child of focused.children) {
           const cwx = pw.x + child.dx * spread * s.childExpandT;
           const cwy = pw.y + child.dy * spread * s.childExpandT;
@@ -697,26 +780,33 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
             // Focus the new center node — camera lerps to it smoothly
             focusedRef.current = l[0] ?? null;
             if (l[0]) {
-              s.camTarget = { x: cwx, y: cwy - 20, z: getFocusZoom(s.W || window.innerWidth) };
+              s.camTarget = { x: cwx, y: cwy - 80, z: getFocusZoom(s.W || window.innerWidth) };
             }
             s.skipSync = true;
-            onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title } : null);
+            onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title, pillarId: s.currentPillarId ?? l[0].id } : null);
             return;
           }
         }
       }
 
       // Check if a top-level node was clicked
+      const tune = getTuning();
       let clicked: LayoutNode | null = null;
       for (const n of lnodes) {
         const wp = nodeWorldPos(n, s.drifts, lnodes, s.time);
-        if (Math.hypot(wp.x - wm.x, wp.y - wm.y) < n.r + 12) clicked = n;
+        if (Math.hypot(wp.x - wm.x, wp.y - wm.y) < n.r * tune.nodeScale + 12) clicked = n;
       }
 
-      if (clicked && clicked.id !== focusedNodeId) {
-        s.lastDiveTime = Date.now();
-        onNodeFocus(clicked);
-      } else if (!clicked) {
+      if (clicked) {
+        if (clicked.id !== focusedNodeId) {
+          s.lastDiveTime = Date.now();
+          s.currentPillarId = clicked.id;
+          onNodeFocus({ id: clicked.id, title: clicked.title, pillarId: clicked.id });
+        } else {
+          // Re-clicked same node — re-emit focus so suggestion card re-appears
+          onNodeFocus({ id: clicked.id, title: clicked.title, pillarId: s.currentPillarId ?? clicked.id });
+        }
+      } else {
         // Clicked empty space
         if (s.diveStack.length > 0) {
           // Back out one level — immediate swap at same position (mirrors dive-in)
@@ -751,10 +841,10 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
             s.ringFadeT = 0;
             focusedRef.current = l[0] ?? null;
             if (l[0]) {
-              s.camTarget = { x: l[0].wx, y: l[0].wy - 20, z: getFocusZoom(s.W || window.innerWidth) };
+              s.camTarget = { x: l[0].wx, y: l[0].wy - 80, z: getFocusZoom(s.W || window.innerWidth) };
             }
             s.skipSync = true;
-            onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title } : null);
+            onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title, pillarId: s.currentPillarId ?? l[0].id } : null);
           } else {
             // Back to root — restore and re-focus parent featured node
             if (rootLayoutRef.current) {
@@ -775,9 +865,9 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
                 s.ringFadeT = 0;
                 focusedRef.current = parentNode;
                 const wp = nodeWorldPos(parentNode, s.drifts, layoutRef.current, s.time);
-                s.camTarget = { x: wp.x, y: wp.y - 20, z: getFocusZoom(s.W || window.innerWidth) };
+                s.camTarget = { x: wp.x, y: wp.y - 80, z: getFocusZoom(s.W || window.innerWidth) };
                 s.skipSync = true;
-                onNodeFocus({ id: parentNode.id, title: parentNode.title });
+                onNodeFocus({ id: parentNode.id, title: parentNode.title, pillarId: parentNode.id });
               } else {
                 focusedRef.current = null;
                 s.camTarget = { x: 0, y: getDefaultCamY(s.W || window.innerWidth, s.H || window.innerHeight), z: getDefaultZoom(s.W || window.innerWidth) };
@@ -936,9 +1026,11 @@ function nodeWorldPos(
 ): { x: number; y: number } {
   const i = lnodes.indexOf(n);
   const d = drifts[i >= 0 ? i : 0];
-  if (!d) return { x: n.wx, y: n.wy };
+  // Only apply posScale to root-level layout (multiple nodes), not dive layouts
+  const ps = lnodes.length > 1 ? getTuning().posScale : 1;
+  if (!d) return { x: n.wx * ps, y: n.wy * ps };
   return {
-    x: n.wx + Math.sin(time * d.fx + d.ph) * d.ax,
-    y: n.wy + Math.cos(time * d.fy + d.ph * 1.3) * d.ay,
+    x: n.wx * ps + Math.sin(time * d.fx + d.ph) * d.ax,
+    y: n.wy * ps + Math.cos(time * d.fy + d.ph * 1.3) * d.ay,
   };
 }

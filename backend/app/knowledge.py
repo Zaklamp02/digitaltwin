@@ -311,6 +311,12 @@ class KnowledgeDB:
     def delete_node(self, id: str) -> bool:
         with self._lock, self._conn:
             cur = self._conn.execute("DELETE FROM nodes WHERE id = ?", (id,))
+            if cur.rowcount > 0:
+                # Auto-delete associated translation row
+                self._conn.execute(
+                    "DELETE FROM translations WHERE key = ?",
+                    (f"node.{id}",),
+                )
         return cur.rowcount > 0
 
     def list_nodes(

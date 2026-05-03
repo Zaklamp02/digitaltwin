@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Refined Variations — Color + Leaf Node</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+    background: #0a0a0f; color: #fff;
+  }
+
+  .header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(10,10,15,0.92); backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 20px 32px;
+  }
+  .header h1 { font-size: 1.1rem; font-weight: 600; }
+  .header p { font-size: 0.78rem; color: rgba(255,255,255,0.4); margin-top: 4px; max-width: 750px; line-height: 1.6; }
+
+  .section-divider {
+    padding: 24px 32px 8px;
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.14em;
+    color: rgba(255,255,255,0.2); font-weight: 600;
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+
+  /* ═══ Grid for comparisons ═══ */
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 16px 32px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 16px 32px; }
+  @media (max-width: 1300px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 900px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+
+  .panel {
+    border-radius: 14px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.07);
+    position: relative;
+  }
+  .panel-label {
+    padding: 10px 14px;
+    font-size: 0.72rem; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.6);
+  }
+  .badge {
+    font-size: 0.55rem; padding: 2px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;
+  }
+  .badge-rec { background: rgba(45,212,191,0.15); color: #2dd4bf; }
+  .badge-opt { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.4); }
+
+  .canvas-wrap {
+    height: 380px; position: relative; overflow: hidden;
+    background: #030712;
+  }
+
+  /* ═══ Swatches ═══ */
+  .swatches {
+    display: flex; gap: 5px; padding: 10px 14px; flex-wrap: wrap;
+    background: rgba(255,255,255,0.015);
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .sw {
+    width: 22px; height: 22px; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.12);
+    position: relative; cursor: default;
+  }
+  .sw:hover::after {
+    content: attr(title);
+    position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%);
+    font-size: 0.48rem; color: rgba(255,255,255,0.4); white-space: nowrap;
+    background: rgba(0,0,0,0.8); padding: 1px 4px; border-radius: 3px;
+  }
+
+  /* ═══ Bubble prompts (overlay inside canvas) ═══ */
+  .bubbles {
+    position: absolute; z-index: 10;
+    display: flex; flex-direction: column; gap: 7px;
+    align-items: flex-start;
+  }
+  .bubble {
+    padding: 9px 14px; border-radius: 14px 14px 14px 4px;
+    backdrop-filter: blur(12px);
+    font-size: 0.73rem; line-height: 1.35;
+    cursor: pointer; transition: all 0.25s;
+    max-width: 260px;
+    animation: bub-in 0.4s ease-out both;
+  }
+  .bubble:nth-child(2) { animation-delay: 0.1s; }
+  .bubble:nth-child(3) { animation-delay: 0.2s; }
+  @keyframes bub-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .bubble .arrow { margin-left: 5px; font-size: 0.65rem; }
+
+  /* ═══ Mini UI elements ═══ */
+  .mini-node {
+    position: absolute; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  .node-dot {
+    border-radius: 50%;
+    transition: all 0.3s;
+  }
+  .node-lbl {
+    font-size: 0.58rem; white-space: nowrap;
+    transition: all 0.3s;
+  }
+
+  /* Edge overlay */
+  .edge-svg {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  }
+
+  /* Particle bg */
+  .ptcl-bg {
+    position: absolute; inset: 0; z-index: 0; overflow: hidden;
+  }
+  .ptcl-bg span {
+    position: absolute; border-radius: 50%;
+    animation: ptcl-float 18s ease-in-out infinite;
+  }
+  @keyframes ptcl-float {
+    0%, 100% { transform: translate(0,0); }
+    33% { transform: translate(6px,-8px); }
+    66% { transform: translate(-4px,5px); }
+  }
+
+  /* Input bar mock */
+  .mock-input {
+    position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 8;
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 12px; border-radius: 14px;
+    backdrop-filter: blur(16px);
+  }
+  .mock-input span {
+    flex: 1; font-size: 0.78rem;
+  }
+  .mock-input .send {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.6rem;
+  }
+
+  /* Hero overlay mock */
+  .mock-hero {
+    position: absolute; top: 16px; left: 18px; z-index: 6;
+  }
+  .mock-hero .name { font-size: 1.2rem; font-weight: 700; line-height: 1.1; }
+  .mock-hero .sub { font-size: 0.65rem; margin-top: 4px; max-width: 200px; line-height: 1.5; }
+
+  /* "Has content" indicator dot */
+  .has-content-dot {
+    position: absolute; top: -2px; right: -2px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #2dd4bf;
+    border: 1px solid rgba(3,7,18,0.8);
+  }
+
+  /* Description text */
+  .desc-box {
+    padding: 14px 32px 6px;
+    font-size: 0.78rem; color: rgba(255,255,255,0.4);
+    max-width: 750px; line-height: 1.65;
+  }
+  .desc-box strong { color: rgba(255,255,255,0.65); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Refined Variations — Theme Colors + Leaf Node Experience</h1>
+  <p>
+    Base = Theme A's simplicity. Adds per-pillar node colors with 3 levels of vividness.
+    Leaf node = Concept B bubble prompts with 3 approaches to conversation starters.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PART 1: THEME COLOR VARIATIONS
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section-divider">Part 1 — Color / Contrast Variations (pillar-colored nodes)</div>
+
+<div class="desc-box">
+  Each featured node gets a color based on its pillar (career, education, hobbies, community, personality, notebooks).
+  Edges and particles stay teal. Three levels of vividness — from subtle tints to more saturated.
+</div>
+
+<div class="grid-3">
+
+  <!-- ═══ VARIATION 1: Subtle Tints ═══ -->
+  <div class="panel">
+    <div class="panel-label">
+      <span class="badge badge-opt">subtle</span>
+      1 — Soft Pillar Tints
+    </div>
+    <div class="canvas-wrap" style="background:#030712">
+      <canvas class="graph-cv" data-variation="subtle"></canvas>
+      <div class="mock-hero">
+        <div class="name" style="color:#fff">Sebastiaan<br>den Boer</div>
+        <div class="sub" style="color:rgba(255,255,255,0.4)">AI engineer & curious builder</div>
+      </div>
+      <div class="mock-input" style="background:rgba(3,7,18,0.8);border:1px solid rgba(255,255,255,0.12)">
+        <span style="color:rgba(255,255,255,0.18)">Ask me anything…</span>
+        <div class="send" style="background:#0F766E;color:#fff">▶</div>
+      </div>
+    </div>
+    <div class="swatches">
+      <div class="sw" style="background:#030712" title="bg"></div>
+      <div class="sw" style="background:rgba(45,212,191,0.5)" title="teal glow"></div>
+      <div class="sw" style="background:rgba(251,191,36,0.45)" title="career"></div>
+      <div class="sw" style="background:rgba(167,139,250,0.45)" title="edu"></div>
+      <div class="sw" style="background:rgba(52,211,153,0.45)" title="hobbies"></div>
+      <div class="sw" style="background:rgba(56,189,248,0.45)" title="community"></div>
+      <div class="sw" style="background:rgba(244,114,182,0.45)" title="personality"></div>
+      <div class="sw" style="background:rgba(250,204,21,0.45)" title="notebooks"></div>
+    </div>
+  </div>
+
+  <!-- ═══ VARIATION 2: Vivid ═══ -->
+  <div class="panel">
+    <div class="panel-label">
+      <span class="badge badge-rec">recommended</span>
+      2 — Vivid Pillar Colors
+    </div>
+    <div class="canvas-wrap" style="background:#020617">
+      <canvas class="graph-cv" data-variation="vivid"></canvas>
+      <div class="mock-hero">
+        <div class="name" style="color:#f8fafc">Sebastiaan<br>den Boer</div>
+        <div class="sub" style="color:rgba(255,255,255,0.48)">AI engineer & curious builder</div>
+      </div>
+      <div class="mock-input" style="background:rgba(2,6,23,0.85);border:1px solid rgba(45,212,191,0.18)">
+        <span style="color:rgba(255,255,255,0.2)">Ask me anything…</span>
+        <div class="send" style="background:#0d9488;color:#fff">▶</div>
+      </div>
+    </div>
+    <div class="swatches">
+      <div class="sw" style="background:#020617" title="bg"></div>
+      <div class="sw" style="background:rgba(45,212,191,0.7)" title="teal glow"></div>
+      <div class="sw" style="background:#f59e0b" title="career"></div>
+      <div class="sw" style="background:#a78bfa" title="edu"></div>
+      <div class="sw" style="background:#34d399" title="hobbies"></div>
+      <div class="sw" style="background:#38bdf8" title="community"></div>
+      <div class="sw" style="background:#f472b6" title="personality"></div>
+      <div class="sw" style="background:#facc15" title="notebooks"></div>
+    </div>
+  </div>
+
+  <!-- ═══ VARIATION 3: Full Saturated ═══ -->
+  <div class="panel">
+    <div class="panel-label">
+      <span class="badge badge-opt">saturated</span>
+      3 — Full Saturated + Brighter Glow
+    </div>
+    <div class="canvas-wrap" style="background:#020617">
+      <canvas class="graph-cv" data-variation="saturated"></canvas>
+      <div class="mock-hero">
+        <div class="name" style="color:#f1f5f9">Sebastiaan<br>den Boer</div>
+        <div class="sub" style="color:rgba(241,245,249,0.45)">AI engineer & curious builder</div>
+      </div>
+      <div class="mock-input" style="background:rgba(2,6,23,0.85);border:1px solid rgba(45,212,191,0.22)">
+        <span style="color:rgba(255,255,255,0.22)">Ask me anything…</span>
+        <div class="send" style="background:#14b8a6;color:#042f2e">▶</div>
+      </div>
+    </div>
+    <div class="swatches">
+      <div class="sw" style="background:#020617" title="bg"></div>
+      <div class="sw" style="background:#5eead4" title="teal glow"></div>
+      <div class="sw" style="background:#fbbf24" title="career"></div>
+      <div class="sw" style="background:#c084fc" title="edu"></div>
+      <div class="sw" style="background:#4ade80" title="hobbies"></div>
+      <div class="sw" style="background:#22d3ee" title="community"></div>
+      <div class="sw" style="background:#fb7185" title="personality"></div>
+      <div class="sw" style="background:#fde047" title="notebooks"></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PART 2: LEAF NODE BUBBLE PROMPT VARIATIONS
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section-divider" style="margin-top:16px">Part 2 — Leaf Node Bubble Prompts (generic, no manual content)</div>
+
+<div class="desc-box">
+  All prompts are <strong>auto-generated from node title + parent title + type</strong> — no manual writing,
+  no translations needed (the chat handles language). Three approaches to how the bubbles feel.
+</div>
+
+<div class="grid-3">
+
+  <!-- ═══ BUBBLE A: Minimal (1-2 prompts) ═══ -->
+  <div class="panel">
+    <div class="panel-label">
+      <span class="badge badge-opt">minimal</span>
+      A — Single Prompt + Indicator
+    </div>
+    <div class="canvas-wrap" style="background:#020617">
+      <div class="ptcl-bg">
+        <span style="width:2px;height:2px;left:20%;top:25%;background:rgba(45,212,191,0.04)"></span>
+        <span style="width:3px;height:3px;left:65%;top:40%;background:rgba(45,212,191,0.03)"></span>
+        <span style="width:2px;height:2px;left:45%;top:70%;background:rgba(45,212,191,0.04)"></span>
+      </div>
+      <svg class="edge-svg" viewBox="0 0 600 380">
+        <line x1="280" y1="170" x2="150" y2="90" stroke="rgba(45,212,191,0.07)" stroke-width="1" />
+        <line x1="280" y1="170" x2="420" y2="100" stroke="rgba(45,212,191,0.07)" stroke-width="1" />
+        <line x1="280" y1="170" x2="180" y2="270" stroke="rgba(45,212,191,0.12)" stroke-width="1.2" />
+      </svg>
+
+      <div class="mini-node" style="left:130px;top:70px">
+        <div class="node-dot" style="width:20px;height:20px;border:1.2px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.06);box-shadow:0 0 12px rgba(245,158,11,0.08)"></div>
+        <span class="node-lbl" style="color:rgba(245,158,11,0.45)">Career</span>
+      </div>
+      <div class="mini-node" style="left:400px;top:80px">
+        <div class="node-dot" style="width:18px;height:18px;border:1.2px solid rgba(167,139,250,0.3);background:rgba(167,139,250,0.05);box-shadow:0 0 10px rgba(167,139,250,0.06)"></div>
+        <span class="node-lbl" style="color:rgba(167,139,250,0.4)">Education</span>
+      </div>
+
+      <!-- Focused leaf node -->
+      <div class="mini-node" style="left:160px;top:250px">
+        <div class="node-dot" style="width:28px;height:28px;border:1.8px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.1);box-shadow:0 0 25px rgba(245,158,11,0.15);position:relative">
+          <div class="has-content-dot" style="background:#fbbf24"></div>
+        </div>
+        <span class="node-lbl" style="color:rgba(245,158,11,0.8);font-weight:600;font-size:0.68rem">Youwe B.V.</span>
+      </div>
+
+      <!-- Single bubble -->
+      <div class="bubbles" style="left:210px;top:255px">
+        <div class="bubble" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.65)">
+          Tell me about Youwe B.V.
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+      </div>
+
+      <div class="mock-input" style="background:rgba(2,6,23,0.85);border:1px solid rgba(45,212,191,0.15)">
+        <span style="color:rgba(255,255,255,0.18)">Ask me anything…</span>
+        <div class="send" style="background:#0d9488;color:#fff">▶</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ BUBBLE B: Standard (2-3 prompts) ═══ -->
+  <div class="panel">
+    <div class="panel-label">
+      <span class="badge badge-rec">recommended</span>
+      B — Contextual Triple Prompts
+    </div>
+    <div class="canvas-wrap" style="background:#020617">
+      <div class="ptcl-bg">
+        <span style="width:2px;height:2px;left:22%;top:28%;background:rgba(45,212,191,0.04)"></span>
+        <span style="width:3px;height:3px;left:60%;top:35%;background:rgba(45,212,191,0.03)"></span>
+        <span style="width:2px;height:2px;left:40%;top:65%;background:rgba(45,212,191,0.04)"></span>
+      </div>
+      <svg class="edge-svg" viewBox="0 0 600 380">
+        <line x1="170" y1="150" x2="100" y2="75" stroke="rgba(45,212,191,0.07)" stroke-width="1" />
+        <line x1="170" y1="150" x2="300" y2="80" stroke="rgba(45,212,191,0.07)" stroke-width="1" />
+        <line x1="170" y1="150" x2="120" y2="250" stroke="rgba(245,158,11,0.12)" stroke-width="1.2" />
+      </svg>
+
+      <div class="mini-node" style="left:80px;top:55px">
+        <div class="node-dot" style="width:18px;height:18px;border:1.2px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.05);box-shadow:0 0 10px rgba(245,158,11,0.06)"></div>
+        <span class="node-lbl" style="color:rgba(245,158,11,0.4)">Career</span>
+      </div>
+      <div class="mini-node" style="left:280px;top:60px">
+        <div class="node-dot" style="width:16px;height:16px;border:1px solid rgba(56,189,248,0.3);background:rgba(56,189,248,0.04);box-shadow:0 0 8px rgba(56,189,248,0.05)"></div>
+        <span class="node-lbl" style="color:rgba(56,189,248,0.35)">Community</span>
+      </div>
+
+      <!-- Focused leaf -->
+      <div class="mini-node" style="left:100px;top:230px">
+        <div class="node-dot" style="width:28px;height:28px;border:1.8px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.1);box-shadow:0 0 25px rgba(245,158,11,0.15);position:relative">
+          <div class="has-content-dot" style="background:#fbbf24"></div>
+        </div>
+        <span class="node-lbl" style="color:rgba(245,158,11,0.8);font-weight:600;font-size:0.68rem">DISC Profile</span>
+      </div>
+
+      <!-- Triple bubbles with contextual templates -->
+      <div class="bubbles" style="left:150px;top:222px">
+        <div class="bubble" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.65)">
+          Tell me about the DISC Profile
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+        <div class="bubble" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);color:rgba(255,255,255,0.55)">
+          How does this relate to Career?
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+        <div class="bubble" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);color:rgba(255,255,255,0.5)">
+          What does this say about Sebastiaan?
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+      </div>
+
+      <div class="mock-input" style="background:rgba(2,6,23,0.85);border:1px solid rgba(45,212,191,0.15)">
+        <span style="color:rgba(255,255,255,0.18)">Ask me anything…</span>
+        <div class="send" style="background:#0d9488;color:#fff">▶</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ BUBBLE C: Twin Voice (the graph "talks") ═══ -->
+  <div class="panel">
+    <div class="panel-label">
+      <span class="badge badge-opt">playful</span>
+      C — Twin Voice (Basbot invites)
+    </div>
+    <div class="canvas-wrap" style="background:#020617">
+      <div class="ptcl-bg">
+        <span style="width:2px;height:2px;left:18%;top:30%;background:rgba(45,212,191,0.04)"></span>
+        <span style="width:3px;height:3px;left:55%;top:25%;background:rgba(45,212,191,0.03)"></span>
+        <span style="width:2px;height:2px;left:42%;top:60%;background:rgba(45,212,191,0.04)"></span>
+      </div>
+      <svg class="edge-svg" viewBox="0 0 600 380">
+        <line x1="260" y1="160" x2="150" y2="80" stroke="rgba(45,212,191,0.07)" stroke-width="1" />
+        <line x1="260" y1="160" x2="400" y2="90" stroke="rgba(45,212,191,0.07)" stroke-width="1" />
+        <line x1="260" y1="160" x2="200" y2="250" stroke="rgba(52,211,153,0.12)" stroke-width="1.2" />
+      </svg>
+
+      <div class="mini-node" style="left:130px;top:60px">
+        <div class="node-dot" style="width:18px;height:18px;border:1.2px solid rgba(52,211,153,0.3);background:rgba(52,211,153,0.05);box-shadow:0 0 10px rgba(52,211,153,0.06)"></div>
+        <span class="node-lbl" style="color:rgba(52,211,153,0.4)">Hobbies</span>
+      </div>
+      <div class="mini-node" style="left:380px;top:70px">
+        <div class="node-dot" style="width:16px;height:16px;border:1px solid rgba(244,114,182,0.3);background:rgba(244,114,182,0.04)"></div>
+        <span class="node-lbl" style="color:rgba(244,114,182,0.35)">Personality</span>
+      </div>
+
+      <!-- Focused leaf -->
+      <div class="mini-node" style="left:180px;top:230px">
+        <div class="node-dot" style="width:28px;height:28px;border:1.8px solid rgba(52,211,153,0.5);background:rgba(52,211,153,0.1);box-shadow:0 0 25px rgba(52,211,153,0.15);position:relative">
+        </div>
+        <span class="node-lbl" style="color:rgba(52,211,153,0.8);font-weight:600;font-size:0.68rem">Dromenbrouwer</span>
+      </div>
+
+      <!-- Twin voice bubbles — more conversational -->
+      <div class="bubbles" style="left:230px;top:218px">
+        <div class="bubble" style="background:rgba(45,212,191,0.06);border:1px solid rgba(45,212,191,0.12);color:rgba(255,255,255,0.7)">
+          <span style="font-size:0.6rem;font-weight:600;color:#2dd4bf;display:block;margin-bottom:3px">Basbot</span>
+          This is one of Sebastiaan's creative projects — want to hear the story behind it?
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+        <div class="bubble" style="background:rgba(45,212,191,0.04);border:1px solid rgba(45,212,191,0.08);color:rgba(255,255,255,0.55)">
+          Or ask me anything about his hobbies
+          <span class="arrow" style="color:rgba(45,212,191,0.6)">→</span>
+        </div>
+      </div>
+
+      <div class="mock-input" style="background:rgba(2,6,23,0.85);border:1px solid rgba(45,212,191,0.15)">
+        <span style="color:rgba(255,255,255,0.18)">Ask me anything…</span>
+        <div class="send" style="background:#0d9488;color:#fff">▶</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PART 3: COMBINED — Best of both
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section-divider" style="margin-top:16px">Part 3 — Combined Preview (vivid colors + bubble prompts)</div>
+
+<div class="desc-box">
+  How it all looks together: pillar-colored nodes + triple-prompt bubbles on a leaf node.
+  Left = root view (unfocused), Right = leaf node focused.
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-label" style="color:rgba(255,255,255,0.35)">Root view — exploring the graph</div>
+    <div class="canvas-wrap" style="background:#020617;height:420px">
+      <canvas class="graph-cv" data-variation="vivid" data-size="large"></canvas>
+      <div class="mock-hero">
+        <div class="name" style="color:#f8fafc">Sebastiaan<br>den Boer</div>
+        <div class="sub" style="color:rgba(255,255,255,0.45)">AI engineer & curious builder. Explore my knowledge graph or ask me anything.</div>
+      </div>
+      <div class="mock-input" style="background:rgba(2,6,23,0.85);border:1px solid rgba(45,212,191,0.18)">
+        <span style="color:rgba(255,255,255,0.2)">Ask me anything…</span>
+        <div class="send" style="background:#0d9488;color:#fff">▶</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-label" style="color:rgba(255,255,255,0.35)">Leaf node focused — prompts appear</div>
+    <div class="canvas-wrap" style="background:#020617;height:420px">
+      <div class="ptcl-bg">
+        <span style="width:2px;height:2px;left:15%;top:20%;background:rgba(45,212,191,0.04)"></span>
+        <span style="width:3px;height:3px;left:60%;top:30%;background:rgba(45,212,191,0.03)"></span>
+        <span style="width:2px;height:2px;left:35%;top:55%;background:rgba(45,212,191,0.04)"></span>
+        <span style="width:2px;height:2px;left:75%;top:65%;background:rgba(45,212,191,0.03)"></span>
+      </div>
+      <svg class="edge-svg" viewBox="0 0 600 420">
+        <line x1="200" y1="200" x2="100" y2="100" stroke="rgba(245,158,11,0.06)" stroke-width="1" />
+        <line x1="200" y1="200" x2="350" y2="85" stroke="rgba(167,139,250,0.06)" stroke-width="1" />
+        <line x1="200" y1="200" x2="80" y2="300" stroke="rgba(56,189,248,0.06)" stroke-width="1" />
+        <line x1="200" y1="200" x2="150" y2="320" stroke="rgba(245,158,11,0.15)" stroke-width="1.2" />
+      </svg>
+
+      <!-- Dimmed other nodes -->
+      <div class="mini-node" style="left:80px;top:80px;opacity:0.3">
+        <div class="node-dot" style="width:22px;height:22px;border:1.2px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.06)"></div>
+        <span class="node-lbl" style="color:rgba(245,158,11,0.3)">Career</span>
+      </div>
+      <div class="mini-node" style="left:330px;top:65px;opacity:0.3">
+        <div class="node-dot" style="width:18px;height:18px;border:1px solid rgba(167,139,250,0.3);background:rgba(167,139,250,0.04)"></div>
+        <span class="node-lbl" style="color:rgba(167,139,250,0.25)">Education</span>
+      </div>
+      <div class="mini-node" style="left:60px;top:280px;opacity:0.3">
+        <div class="node-dot" style="width:16px;height:16px;border:1px solid rgba(56,189,248,0.25);background:rgba(56,189,248,0.04)"></div>
+        <span class="node-lbl" style="color:rgba(56,189,248,0.2)">Community</span>
+      </div>
+
+      <!-- Focused leaf node -->
+      <div class="mini-node" style="left:130px;top:300px">
+        <div class="node-dot" style="width:32px;height:32px;border:2px solid rgba(245,158,11,0.55);background:rgba(245,158,11,0.12);box-shadow:0 0 30px rgba(245,158,11,0.18);position:relative">
+          <div class="has-content-dot" style="background:#fbbf24"></div>
+        </div>
+        <span class="node-lbl" style="color:rgba(245,158,11,0.85);font-weight:600;font-size:0.72rem">Youwe B.V.</span>
+      </div>
+
+      <!-- Bubble prompts -->
+      <div class="bubbles" style="left:186px;top:295px">
+        <div class="bubble" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.65)">
+          Tell me about Youwe B.V.
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+        <div class="bubble" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);color:rgba(255,255,255,0.55)">
+          How does this relate to Career?
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+        <div class="bubble" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);color:rgba(255,255,255,0.5)">
+          What does this say about Sebastiaan?
+          <span class="arrow" style="color:#2dd4bf">→</span>
+        </div>
+      </div>
+
+      <div class="mock-input" style="background:rgba(2,6,23,0.85);border:1px solid rgba(45,212,191,0.15)">
+        <span style="color:rgba(255,255,255,0.18)">Ask me anything…</span>
+        <div class="send" style="background:#0d9488;color:#fff">▶</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     NOTES
+     ═══════════════════════════════════════════════════════════════ -->
+<div style="padding: 24px 32px 40px; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 24px;">
+  <div style="font-size:0.85rem;font-weight:600;margin-bottom:8px">How the prompts auto-generate</div>
+  <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);line-height:1.7;max-width:700px">
+    <strong style="color:rgba(255,255,255,0.6)">Template approach — zero manual effort:</strong><br>
+    Given a focused node with <code style="color:#2dd4bf;background:rgba(45,212,191,0.08);padding:1px 5px;border-radius:3px">title</code>,
+    <code style="color:#2dd4bf;background:rgba(45,212,191,0.08);padding:1px 5px;border-radius:3px">type</code>, and
+    <code style="color:#2dd4bf;background:rgba(45,212,191,0.08);padding:1px 5px;border-radius:3px">parent title</code>:<br><br>
+
+    <strong style="color:rgba(255,255,255,0.55)">Prompt 1:</strong> "Tell me about {title}" — always works, dead simple<br>
+    <strong style="color:rgba(255,255,255,0.55)">Prompt 2:</strong> "How does {title} relate to {parent}?" — uses graph context<br>
+    <strong style="color:rgba(255,255,255,0.55)">Prompt 3:</strong> "What does this say about Sebastiaan?" — personal angle (only for relevant types)<br><br>
+
+    The <strong style="color:rgba(255,255,255,0.55)">chat itself handles translations</strong> — the LLM responds in whichever language the user has set.
+    For the prompt labels, you can use simple i18n templates like
+    <code style="color:#2dd4bf;background:rgba(45,212,191,0.08);padding:1px 5px;border-radius:3px">t("ui.tell_me_about", {title})</code>
+    with just 2-3 translation keys (vs. hundreds of per-node prompts).<br><br>
+
+    <strong style="color:rgba(255,255,255,0.55)">Pillar colors</strong> are mapped by walking the containment-edge tree upward from any node
+    to its root pillar (career/education/hobbies/community/personality/nb-work). All children
+    inherit the parent's pillar color. No data model changes needed.
+  </div>
+</div>
+
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// Live canvas rendering for color variations
+// ═══════════════════════════════════════════════════════════
+
+const PILLAR_COLORS = {
+  subtle: {
+    career:      [251, 191, 36, 0.40],
+    education:   [167, 139, 250, 0.40],
+    hobbies:     [52, 211, 153, 0.40],
+    community:   [56, 189, 248, 0.40],
+    personality: [244, 114, 182, 0.40],
+    notebooks:   [250, 204, 21, 0.40],
+    edgeTeal:    [45, 212, 191],
+    edgeAlpha: 0.07,
+    nodeGlow: 0.12,
+    labelDim: 0.38,
+    labelBright: 0.7,
+    particleA: 0.035,
+    bgGlow: 0,
+  },
+  vivid: {
+    career:      [245, 158, 11, 0.60],
+    education:   [167, 139, 250, 0.55],
+    hobbies:     [52, 211, 153, 0.55],
+    community:   [56, 189, 248, 0.50],
+    personality: [244, 114, 182, 0.50],
+    notebooks:   [250, 204, 21, 0.55],
+    edgeTeal:    [45, 212, 191],
+    edgeAlpha: 0.1,
+    nodeGlow: 0.22,
+    labelDim: 0.5,
+    labelBright: 0.85,
+    particleA: 0.045,
+    bgGlow: 0.015,
+  },
+  saturated: {
+    career:      [251, 191, 36, 0.80],
+    education:   [192, 132, 252, 0.75],
+    hobbies:     [74, 222, 128, 0.75],
+    community:   [34, 211, 238, 0.70],
+    personality: [251, 113, 133, 0.70],
+    notebooks:   [253, 224, 71, 0.75],
+    edgeTeal:    [94, 234, 212],
+    edgeAlpha: 0.14,
+    nodeGlow: 0.35,
+    labelDim: 0.6,
+    labelBright: 1.0,
+    particleA: 0.06,
+    bgGlow: 0.025,
+  },
+};
+
+const PILLARS = ['career', 'education', 'hobbies', 'community', 'personality', 'notebooks'];
+const PILLAR_LABELS = {
+  career: 'Career', education: 'Education', hobbies: 'Hobbies',
+  community: 'Community', personality: 'Personality', notebooks: 'Notebooks',
+};
+const PILLAR_RADII = { career: 20, education: 17, hobbies: 17, community: 15, personality: 15, notebooks: 18 };
+
+function initColorCanvas(canvas, variationKey) {
+  const theme = PILLAR_COLORS[variationKey];
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const W = () => canvas.width / dpr;
+  const H = () => canvas.height / dpr;
+
+  const ringR = canvas.dataset.size === 'large' ? 120 : 100;
+
+  const nodes = PILLARS.map((p, i) => ({
+    id: p,
+    label: PILLAR_LABELS[p],
+    r: PILLAR_RADII[p],
+    color: theme[p],
+    angle: i * Math.PI * 2 / PILLARS.length - Math.PI / 2,
+    x: 0, y: 0, vx: 0, vy: 0,
+  }));
+
+  // Particles
+  const particles = [];
+  for (let i = 0; i < 50; i++) {
+    particles.push({
+      x: Math.random() * 700, y: Math.random() * 450,
+      vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.25,
+      r: Math.random() * 1.1 + 0.3, a: Math.random() * theme.particleA + 0.01,
+    });
+  }
+
+  const EDGES = [[0,1],[0,3],[1,2],[2,5],[3,4],[4,0],[1,5],[3,5]];
+
+  let mouse = { x: -999, y: -999 };
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
+  });
+  canvas.addEventListener('mouseleave', () => { mouse.x = -999; mouse.y = -999; });
+
+  let time = 0;
+
+  function draw() {
+    const w = W(), h = H();
+    time += 0.016;
+
+    const cx = w / 2, cy = h / 2 + 20;
+
+    // Position nodes
+    for (const n of nodes) {
+      n.x = cx + Math.cos(n.angle) * ringR + Math.sin(time * 0.4 + n.angle) * 4;
+      n.y = cy + Math.sin(n.angle) * ringR + Math.cos(time * 0.35 + n.angle * 1.3) * 3;
+    }
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle center glow
+    if (theme.bgGlow > 0) {
+      const grd = ctx.createRadialGradient(cx, cy - 10, 0, cx, cy, w * 0.45);
+      grd.addColorStop(0, `rgba(45,212,191,${theme.bgGlow})`);
+      grd.addColorStop(1, 'transparent');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // Particles
+    const [tr, tg, tb] = theme.edgeTeal;
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+      if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+      const dm = Math.hypot(p.x - mouse.x, p.y - mouse.y);
+      const glow = dm < 70 ? (70 - dm) / 70 * 0.06 : 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + glow, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${tr},${tg},${tb},${p.a + glow})`;
+      ctx.fill();
+    }
+
+    // Edges (teal)
+    let hoverNode = -1;
+    for (let i = 0; i < nodes.length; i++) {
+      const d = Math.hypot(nodes[i].x - mouse.x, nodes[i].y - mouse.y);
+      if (d < nodes[i].r + 10) { hoverNode = i; break; }
+    }
+
+    for (const [i, j] of EDGES) {
+      const a = nodes[i], b = nodes[j];
+      const mx = (a.x + b.x) / 2 + (a.y - b.y) * 0.12;
+      const my = (a.y + b.y) / 2 + (b.x - a.x) * 0.12;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(mx, my, b.x, b.y);
+      const highlight = (hoverNode === i || hoverNode === j) ? 0.12 : 0;
+      ctx.strokeStyle = `rgba(${tr},${tg},${tb},${theme.edgeAlpha + highlight})`;
+      ctx.lineWidth = (hoverNode === i || hoverNode === j) ? 1.3 : 0.7;
+      ctx.stroke();
+    }
+
+    // Nodes (pillar-colored!)
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const isHover = hoverNode === i;
+      const [cr, cg, cb, ca] = n.color;
+      const pulse = Math.sin(time * 1.2 + i * 0.8) * 0.03 + 1;
+
+      // Glow
+      const glowR = n.r * (isHover ? 2.5 : 1.7) * pulse;
+      const grd = ctx.createRadialGradient(n.x, n.y, n.r * 0.4, n.x, n.y, glowR);
+      grd.addColorStop(0, `rgba(${cr},${cg},${cb},${theme.nodeGlow * (isHover ? 2.2 : 1)})`);
+      grd.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      ctx.beginPath(); ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+      ctx.fillStyle = grd; ctx.fill();
+
+      // Circle fill + stroke
+      const displayR = n.r * (isHover ? 1.1 : 1);
+      ctx.beginPath(); ctx.arc(n.x, n.y, displayR, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${(isHover ? 0.16 : 0.08) * (ca / 0.5)})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${cr},${cg},${cb},${(isHover ? 0.6 : 0.32) * (ca / 0.5)})`;
+      ctx.lineWidth = isHover ? 1.6 : 0.9;
+      ctx.stroke();
+
+      // Center dot
+      ctx.beginPath(); ctx.arc(n.x, n.y, (2.5 + (isHover ? 1.2 : 0)) , 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${isHover ? 0.65 : 0.35})`;
+      ctx.fill();
+
+      // Label
+      ctx.font = `${isHover ? '600' : '400'} ${isHover ? 10 : 8.5}px Inter,-apple-system,sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${isHover ? theme.labelBright : theme.labelDim})`;
+      ctx.fillText(n.label, n.x, n.y + displayR + 13);
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  draw();
+}
+
+// Init all canvas elements
+document.querySelectorAll('.graph-cv').forEach(cv => {
+  initColorCanvas(cv, cv.dataset.variation);
+});
+</script>
+</body>
+</html>

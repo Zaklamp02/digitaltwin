@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import KnowledgeTab from "./knowledge/KnowledgeTabNotebook";
 import GraphTab from "./GraphTab";
+import TranslationsTab from "./TranslationsTab";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ interface Session {
   started_ago_s: number;
 }
 
-type Tab = "overview" | "logs" | "content" | "knowledge" | "graph" | "config" | "roles" | "sessions" | "eval";
+type Tab = "overview" | "logs" | "content" | "knowledge" | "graph" | "config" | "roles" | "sessions" | "eval" | "translations";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -1683,6 +1684,7 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
     { id: "config", label: "Config" },
     { id: "roles", label: "Roles & Access" },
     { id: "sessions", label: "Sessions" },
+    { id: "translations", label: "NL Translations" },
     { id: "eval", label: "Eval" },
   ];
 
@@ -1751,6 +1753,7 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
           {tab === "config" && <ConfigTab token={token} />}
           {tab === "roles" && <RolesTab token={token} />}
           {tab === "sessions" && <SessionsTab token={token} />}
+          {tab === "translations" && <TranslationsTab token={token} />}
           {tab === "eval" && <EvalTab token={token} />}
         </main>
       )}

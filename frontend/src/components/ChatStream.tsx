@@ -11,6 +11,7 @@ interface Props {
   onSend?: (text: string) => void;
   ttsEnabled: boolean;
   token?: string;
+  t?: (key: string, fallback?: string) => string;
 }
 
 const QUICK_PROMPTS_FALLBACK = [
@@ -79,7 +80,8 @@ const mdComponents = {
 };
 
 /** Display-only chat stream. Auto-scrolls on new content. */
-export function ChatStream({ messages, onReplay, onSend, ttsEnabled, token }: Props) {
+export function ChatStream({ messages, onReplay, onSend, ttsEnabled, token, t: tProp }: Props) {
+  const t = tProp ?? ((k: string, fb?: string) => fb ?? k);
   const endRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -226,7 +228,7 @@ export function ChatStream({ messages, onReplay, onSend, ttsEnabled, token }: Pr
                       onClick={() => onReplay(m.content)}
                       aria-label="Replay audio"
                     >
-                      ▶︎ play
+                      {t("ui.play", "▶︎ play")}
                     </button>
                   )}
                   <button
@@ -234,7 +236,7 @@ export function ChatStream({ messages, onReplay, onSend, ttsEnabled, token }: Pr
                     onClick={() => copyMessage(m.id, m.content)}
                     aria-label="Copy message"
                   >
-                    {copiedId === m.id ? "✓ copied" : "⎘ copy"}
+                    {copiedId === m.id ? t("ui.copied", "✓ copied") : t("ui.copy", "⎘ copy")}
                   </button>
                 </div>
               )}

@@ -297,6 +297,16 @@ async def content_config(request: Request) -> dict:
     return {"welcome_message": welcome, "chips": chips}
 
 
+@router.get("/api/translations")
+async def public_translations(request: Request, lang: str = "nl"):
+    """Public endpoint — returns the translations map for the given language."""
+    if not hasattr(request.app.state, "knowledge"):
+        return {}
+    from .translations import get_translations_map
+    kb = request.app.state.knowledge
+    return get_translations_map(kb, lang)
+
+
 @router.get("/api/graph")
 async def public_graph(request: Request, caller: Caller = Depends(caller_dep)):
     """Public-facing graph — filtered by the caller's roles."""

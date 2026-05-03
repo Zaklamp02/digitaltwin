@@ -9,6 +9,7 @@ interface Props {
   onMic: () => void;
   /** External text (e.g. just-transcribed speech) to inject into the field. */
   injected?: string;
+  t?: (key: string, fallback?: string) => string;
 }
 
 export function InputBar({
@@ -19,7 +20,9 @@ export function InputBar({
   onSend,
   onMic,
   injected,
+  t: tProp,
 }: Props) {
+  const t = tProp ?? ((k: string, fb?: string) => fb ?? k);
   const [value, setValue] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -50,10 +53,10 @@ export function InputBar({
   };
 
   const micLabel = transcribing
-    ? "Transcribing…"
+    ? t("ui.transcribing", "Transcribing…")
     : recording
-      ? "Stop recording"
-      : "Speak your question";
+      ? t("ui.stop_recording", "Stop recording")
+      : t("ui.speak_question", "Speak your question");
 
   return (
     <div className="border-t border-ink/10 dark:border-white/10 bg-white dark:bg-gray-900 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -87,7 +90,7 @@ export function InputBar({
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKey}
           rows={1}
-          placeholder={disabled ? "Conversation ended." : "Ask about Sebastiaan…"}
+          placeholder={disabled ? t("ui.conversation_ended", "Conversation ended.") : t("ui.ask_placeholder", "Ask about Sebastiaan…")}
           disabled={disabled}
           className="flex-1 resize-none rounded-2xl border border-ink/15 dark:border-white/15 bg-white dark:bg-gray-800 px-4 py-2.5 text-[15px] text-ink dark:text-white leading-6 placeholder:text-ink/40 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-ink/5 dark:disabled:bg-white/5 disabled:text-ink/40 dark:disabled:text-white/40"
         />

@@ -1887,3 +1887,117 @@ async def patch_eval_run(
 
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return {"ok": True}
+
+
+# ── translations ──────────────────────────────────────────────────────────────
+
+from .translations import (
+    get_all_translations,
+    update_translation,
+    reset_translation,
+    translate_stale,
+    translate_single,
+    get_translation_prompt,
+    set_translation_prompt,
+    seed_translations,
+)
+
+
+@router.get("/translations")
+async def list_translations(
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict:
+    """Return all translation rows for the admin UI."""
+    kb = request.app.state.knowledge
+    return {"translations": get_all_translations(kb)}
+
+
+class TranslationPatchBody(BaseModel):
+    text_nl: str
+
+
+@router.patch("/translations/{key:path}")
+async def patch_translation(
+    key: str,
+    body: TranslationPatchBody,
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict:
+    """Manually set a Dutch translation."""
+    kb = request.app.state.knowledge
+    ok = update_translation(kb, key, body.text_nl, is_manual=True)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Translation key not found")
+    return {"ok": True}
+
+
+@router.post("/translations/{key:path}/reset")
+async def reset_translation_route(
+    key: str,
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict:
+    """Reset a translation to auto-mode (will be re-translated by LLM)."""
+    kb = request.app.state.knowledge
+    ok = reset_translation(kb, key)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Translation key not found")
+    return {"ok": True}
+
+
+@router.post("/translations/regenerate")
+async def regenerate_translations(
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict:
+    """Trigger LLM translation of all stale entries."""
+    kb = request.app.state.knowledge
+    settings = get_settings()
+    # Reseed first to pick up any new nodes/changes
+    seed_translations(kb)
+    count = translate_stale(kb, settings.openai_api_key)
+    return {"ok": True, "translated": count}
+
+
+@router.post("/translations/{key:path}/regenerate")
+async def regenerate_single_translation(
+    key: str,
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict:
+    """Re-translate a single key via LLM."""
+    kb = request.app.state.knowledge
+    settings = get_settings()
+    # Reset first so it becomes stale
+    reset_translation(kb, key)
+    result = translate_single(kb, key, settings.openai_api_key)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Translation key not found or translation failed")
+    return {"ok": True, "text_nl": result}
+
+
+@router.get("/translations/prompt")
+async def get_prompt(
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict:
+    """Return the current translation prompt."""
+    kb = request.app.state.knowledge
+    return {"prompt": get_translation_prompt(kb)}
+
+
+class PromptBody(BaseModel):
+    prompt: str
+
+
+@router.put("/translations/prompt")
+async def set_prompt(
+    body: PromptBody,
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict:
+    """Save a custom translation prompt."""
+    kb = request.app.state.knowledge
+    set_translation_prompt(kb, body.prompt)
+    return {"ok": True}

@@ -7,6 +7,13 @@ body,
 #root {
   height: 100%;
   height: 100dvh;
+  --chat-fade: rgba(250, 250, 249, 0.92);
+}
+
+html.dark,
+html.dark body,
+html.dark #root {
+  --chat-fade: rgba(3, 7, 18, 0.88);
 }
 
 body {
@@ -71,4 +78,13 @@ html.dark body {
 }
 .animate-scale-in {
   animation: scale-in 0.2s ease-out both;
+}
+
+/* Suggestion card slide-up */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out both;
 }
