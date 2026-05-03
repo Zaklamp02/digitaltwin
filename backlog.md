@@ -121,6 +121,42 @@ Full interactive canvas landing page at `sebastiaandenboer.org`:
 - Responsive zoom for mobile
 - Hero section with bio, links, avatar
 
+### V2 — Obsidian Vault as Source of Truth 🗄️
+
+Full PRD: `OBSIDIAN_PRD.md`. Branch: `v2-obsidian`.
+
+**Phase 1: Export DB → vault** (zero-risk, additive only)
+- [ ] **V2.1** `scripts/export_vault.py` — export all SQLite nodes as `.md` files with YAML frontmatter (type, roles, links, metadata) + folder hierarchy from notebook containment edges
+- [ ] **V2.2** Export `_system.md` (system prompt) and `_config.md` (welcome msg, chips, translation prompt)
+- [ ] **V2.3** Copy `data/documents/*` to vault `documents/` folder with companion `.md` stubs
+- [ ] **V2.4** Validate: round-trip test — parse exported vault, compare node/edge counts with DB
+
+**Phase 2: Sync pipeline** (new scripts, existing code untouched)
+- [ ] **V2.5** `scripts/sync_vault.py` — vault parser (frontmatter + wikilinks + folder hierarchy → nodes + edges)
+- [ ] **V2.6** Diff engine — compare parsed vault state vs SQLite, produce changeset
+- [ ] **V2.7** SQLite writer — upsert nodes, reconcile edges, update settings from `_config.md`
+- [ ] **V2.8** Incremental ChromaDB indexer — only re-embed changed nodes
+- [ ] **V2.9** Binary file sync + CLI entry point with `--full` flag
+- [ ] **V2.10** Test: sync a copy of exported vault → fresh DB, compare with original
+
+**Phase 3: Backend switchover** (modify existing code)
+- [ ] **V2.11** Replace startup `migrate_from_memory()` + `apply_graph_customizations()` + `resync_seed_edges()` with `sync_vault.py` invocation
+- [ ] **V2.12** Remove / make read-only: content-editing admin API endpoints (node CRUD, edge CRUD, document upload, memory chat)
+- [ ] **V2.13** Add `GET /api/admin/sync-status` endpoint
+
+**Phase 4: Frontend strip** (modify existing code)
+- [ ] **V2.14** Remove content-editing components from admin dashboard
+- [ ] **V2.15** Add sync status panel (last sync time, file count, warnings)
+- [ ] **V2.16** Make content views read-only (system prompt, welcome msg, chips)
+- [ ] **V2.17** Local end-to-end test on port 8001/5174
+
+**Phase 5: Deploy** (deferred — needs Sebastiaan)
+- [!] **V2.18** Set up Syncthing/rsync from local vault → NAS
+- [!] **V2.19** Cron job on NAS running `sync_vault.py` every 5 min
+- [!] **V2.20** Cutover: merge branch, rebuild containers, validate
+
+---
+
 ### M18 — Image support in memory palace
 - [ ] Extend `app/indexer.py` to detect `*.png / *.jpg / *.webp` in the `memory/` tree
 - [ ] For each image, call OpenAI Vision (`gpt-4o`) at index time to generate a caption; store as a chunk with `source_type: image` + `image_path` metadata
