@@ -115,7 +115,7 @@ export interface GraphTuning {
 }
 
 const DEFAULT_TUNING: GraphTuning = {
-  posScale: 0.85,
+  posScale: 0.75,
   nodeScale: 1.8,
   fontSize: 17,
   childFontSize: 11,
@@ -162,7 +162,7 @@ const DEFAULT_ZOOM = getDefaultZoom(_INIT_W);
  *  Hero content ≈ top 22%, input bar ≈ bottom 65px. */
 function getDefaultCamY(canvasW: number, canvasH: number): number {
   const heroH = Math.min(canvasH * 0.22, 200); // hero overlay height (px)
-  const inputH = 65;                             // input bar height (px)
+  const inputH = 120;                            // floating input bar + suggestion card (px)
   const usableCenter = heroH + (canvasH - heroH - inputH) / 2;
   const shiftPx = usableCenter - canvasH / 2;    // how far below screen center
   return -(shiftPx / getDefaultZoom(canvasW));    // negative = moves rendered world down
@@ -457,7 +457,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
       if (node) {
         const wp = nodeWorldPos(node, s.drifts, layoutRef.current, s.time);
         s.camTarget.x = wp.x;
-        s.camTarget.y = wp.y - 80;
+        s.camTarget.y = wp.y + 60;
         s.camTarget.z = getFocusZoom(s.W || window.innerWidth);
       }
     } else {
@@ -780,7 +780,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
             // Focus the new center node — camera lerps to it smoothly
             focusedRef.current = l[0] ?? null;
             if (l[0]) {
-              s.camTarget = { x: cwx, y: cwy - 80, z: getFocusZoom(s.W || window.innerWidth) };
+              s.camTarget = { x: cwx, y: cwy + 60, z: getFocusZoom(s.W || window.innerWidth) };
             }
             s.skipSync = true;
             onNodeFocus(l[0] ? { id: l[0].id, title: l[0].title, pillarId: s.currentPillarId ?? l[0].id } : null);
@@ -865,7 +865,7 @@ export function MindscapeCanvas({ nodes, edges, dark, onNodeFocus, focusedNodeId
                 s.ringFadeT = 0;
                 focusedRef.current = parentNode;
                 const wp = nodeWorldPos(parentNode, s.drifts, layoutRef.current, s.time);
-                s.camTarget = { x: wp.x, y: wp.y - 80, z: getFocusZoom(s.W || window.innerWidth) };
+                s.camTarget = { x: wp.x, y: wp.y + 60, z: getFocusZoom(s.W || window.innerWidth) };
                 s.skipSync = true;
                 onNodeFocus({ id: parentNode.id, title: parentNode.title, pillarId: parentNode.id });
               } else {
