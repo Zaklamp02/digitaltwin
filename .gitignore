@@ -15,7 +15,6 @@ tokens.txt
 .cloudflared/
 
 # Personal data — never committed
-memory/
 data/
 memory_backup_*.zip
 

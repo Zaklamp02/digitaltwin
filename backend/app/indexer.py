@@ -82,7 +82,7 @@ class Chunk:
     roles: list[str]       # RBAC roles — pipe-joined in ChromaDB metadata
     memory_type: str       # factual|experience|project|opinion|personal|faq|community
     text: str
-    image_path: str = ""   # relative path within memory/ (non-empty for image chunks)
+    image_path: str = ""   # relative path within the synced content directory
 
 
 def _token_count(text: str) -> int:

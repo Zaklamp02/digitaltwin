@@ -8,36 +8,43 @@ from typing import Iterator
 import pytest
 
 from app.knowledge import KnowledgeDB
+from app.vault_sync import sync_vault_to_db
 
 
 @pytest.fixture
-def tmp_memory_dir(tmp_path: Path) -> Path:
-    """A memory directory with three tiers, laid out like the real thing.
-
-    Still used by migrate_from_memory() at startup to seed a KnowledgeDB.
-    """
-    d = tmp_path / "memory"
+def tmp_vault_dir(tmp_path: Path) -> Path:
+    """A minimal Obsidian-style vault with public, work, and personal notes."""
+    d = tmp_path / "digital-twin"
     d.mkdir()
+    (d / "digital-twin.md").write_text(
+        "# Digital Twin\n\nRoot note for the temporary test vault.\n",
+        encoding="utf-8",
+    )
     (d / "_system.md").write_text(
-        "<!-- tier: system -->\n# System\nYou are a test agent.\n", encoding="utf-8"
+        "# System\n\nYou are a test agent.\n", encoding="utf-8"
     )
     (d / "public_bio.md").write_text(
-        "<!-- tier: public -->\n"
+        "---\nvisibility: public\n---\n"
         "# Sebastiaan\n\n"
         "Sebastiaan is a director of AI and lives in Utrecht. "
         "He founded the AI practice at Youwe in 2023.\n",
         encoding="utf-8",
     )
-    (d / "recruiter_personality.md").write_text(
-        "<!-- tier: recruiter -->\n"
+    (d / "work_personality.md").write_text(
+        "---\nvisibility: work\n---\n"
         "# Personality\n\n"
         "Dutch directness. KPI-driven. Warm but will push back.\n",
         encoding="utf-8",
     )
     personal = d / "personal"
     personal.mkdir()
+    (personal / "personal.md").write_text(
+        "---\nvisibility: personal\n---\n"
+        "# Personal\n\nPrivate notebook root.\n",
+        encoding="utf-8",
+    )
     (personal / "anecdote.md").write_text(
-        "<!-- tier: personal -->\n"
+        "---\nvisibility: personal\n---\n"
         "# First week at Youwe\n\n"
         "The inner-circle story about how the AI team was one person on day one.\n",
         encoding="utf-8",
@@ -46,13 +53,11 @@ def tmp_memory_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def tmp_knowledge_db(tmp_path: Path, tmp_memory_dir: Path) -> KnowledgeDB:
-    """A KnowledgeDB seeded from tmp_memory_dir, for use in RAG and chat tests."""
-    from app.knowledge import migrate_from_memory
-
+def tmp_knowledge_db(tmp_path: Path, tmp_vault_dir: Path) -> KnowledgeDB:
+    """A KnowledgeDB seeded from a temporary vault, for use in RAG and chat tests."""
     db_path = tmp_path / "test_knowledge.db"
     db = KnowledgeDB(db_path)
-    migrate_from_memory(tmp_memory_dir, db)
+    sync_vault_to_db(tmp_vault_dir, db)
     return db
 
 

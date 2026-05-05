@@ -44,11 +44,10 @@ docker compose up --build -d
 
 Expose `http://<nas>:5173` through Cloudflare Tunnel when ready.
 
-## Editing memory
+## Editing content
 
-Any `.md` file under `memory/` is hot-reloaded: save and the next message uses
-the updated index. Add `<!-- tier: recruiter -->` (or `personal`) on the first
-line to restrict access; default is `public`.
+The Obsidian vault is the source of truth. Edit the `.md` files in your vault,
+then restart the backend or trigger a vault sync from the admin interface.
 
 ## Tokens
 

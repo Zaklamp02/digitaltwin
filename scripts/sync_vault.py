@@ -230,9 +230,8 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
         # Regular node
         node_id = _id_from_path(rel, vault_path.name)
         node_type = "page"  # uniform type; structure comes from folders
-        # Prefer H1/H2 from body over filename stem
-        _h1_match = re.search(r"^#{1,2}\s+(.+)$", body, re.MULTILINE)
-        title = _h1_match.group(1).strip() if _h1_match else _title_from_stem(f.stem)
+        # Use the actual note name for graph labels; headings are content, not identity.
+        title = _title_from_stem(f.stem)
 
         # Visibility → roles mapping
         # Supports: string ("public", "private", "personal", "work", "friends", …)

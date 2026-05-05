@@ -407,14 +407,14 @@ async def public_graph(request: Request, caller: Caller = Depends(caller_dep)):
     return kb.get_graph(caller_roles=caller.roles)
 
 
-@router.get("/api/memory-image/{path:path}")
-async def memory_image(
+@router.get("/api/content-image/{path:path}")
+async def content_image(
     path: str,
     settings: Settings = Depends(get_settings),
 ):
-    """Serve an image stored under the memory directory.
+    """Serve an image stored under the configured content directory.
 
-    The path is validated to be within memory_path to prevent directory traversal.
+    The path is validated to be within the configured content path to prevent directory traversal.
     Only image file extensions are accepted.
     """
     IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -426,10 +426,10 @@ async def memory_image(
         ".gif": "image/gif",
     }
 
-    # Normalise and resolve; reject any attempt to escape memory_path
+    # Normalise and resolve; reject any attempt to escape the content directory.
     try:
-        resolved = (settings.memory_path / path).resolve()
-        resolved.relative_to(settings.memory_path.resolve())  # raises if outside
+        resolved = (settings.content_path / path).resolve()
+        resolved.relative_to(settings.content_path.resolve())  # raises if outside
     except (ValueError, OSError):
         raise HTTPException(status_code=400, detail="invalid image path")
 

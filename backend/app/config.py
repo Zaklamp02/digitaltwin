@@ -45,8 +45,7 @@ class Settings(BaseSettings):
     log_file: str = "./logs/requests.ndjson"
 
     # Paths
-    memory_dir: str = "./memory"
-    vault_dir: str = ""  # Obsidian vault path; if set, replaces memory_dir as source of truth
+    vault_dir: str = ""  # Required source-of-truth content directory
     chroma_dir: str = "./chroma_db"
     credentials_file: str = "./credentials.yaml"
     knowledge_db: str = "./data/knowledge.db"
@@ -75,15 +74,14 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
-    def memory_path(self) -> Path:
-        """Source-of-truth content directory (vault if set, otherwise memory_dir)."""
-        if self.vault_dir:
-            return Path(self.vault_dir).resolve()
-        return Path(self.memory_dir).resolve()
+    def content_path(self) -> Path:
+        """Source-of-truth content directory.
 
-    @property
-    def vault_path(self) -> Path | None:
-        return Path(self.vault_dir).resolve() if self.vault_dir else None
+        The app is vault-only; VAULT_DIR must be configured.
+        """
+        if not self.vault_dir:
+            raise RuntimeError("VAULT_DIR must be set")
+        return Path(self.vault_dir).resolve()
 
     @property
     def chroma_path(self) -> Path:

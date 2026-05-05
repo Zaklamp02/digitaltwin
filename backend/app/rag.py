@@ -178,7 +178,7 @@ class RAGRetriever:
             lines.append(c.text)
             # For image nodes, append a markdown image directive so the LLM can embed it.
             if c.image_path:
-                lines.append(f"\n[Image available — to show it inline use: `![{c.section_heading or 'image'}](/api/memory-image/{c.image_path})`]")
+                lines.append(f"\n[Image available — to show it inline use: `![{c.section_heading or 'image'}](/api/content-image/{c.image_path})`]")
             lines.append("")
         return "\n".join(lines).rstrip() + "\n"
 

@@ -14,13 +14,12 @@ from .admin import router as admin_router
 from .audio import router as audio_router
 from .chat import router as chat_router
 from .config import get_settings
-from .knowledge import KnowledgeDB, apply_graph_customizations, migrate_from_memory, resync_seed_edges
+from .knowledge import KnowledgeDB
 from .logging_ import configure as configure_logging
 from .providers import AnthropicProvider, LLMProvider, OllamaProvider, OpenAIProvider
 from .rag import RAGRetriever, build_embedder
 from .teams_webhook import router as teams_router
 from .telegram_bot import TelegramBot, PublicTelegramBot
-from .image_indexer import index_images_from_memory
 from .translations import seed_translations, translate_stale, ensure_translations_table
 from .vault_sync import sync_vault_to_db
 
@@ -68,40 +67,16 @@ async def lifespan(app: FastAPI):
     # Knowledge graph (SQLite)
     knowledge = KnowledgeDB(settings.knowledge_db_path)
 
-    # --- Vault-based sync (new) or legacy memory sync ---
-    if settings.vault_path and settings.vault_path.exists():
-        log.info("vault mode: syncing from %s", settings.vault_path)
-        try:
-            result = sync_vault_to_db(settings.vault_path, knowledge)
-            log.info("vault sync result: %s", result.get("status", "unknown"))
-        except Exception as e:
-            log.warning("vault sync failed (continuing with existing DB): %s", e)
-    else:
-        # Legacy mode: migrate from memory/ directory
-        n = migrate_from_memory(settings.memory_path, knowledge)
-        if n:
-            log.info("memory sync: %d node(s) created or updated", n)
-        _customizations_ok = True
-        try:
-            apply_graph_customizations(knowledge)
-        except Exception as e:
-            _customizations_ok = False
-            log.warning("graph customizations failed (continuing): %s", e)
-        if _customizations_ok:
-            try:
-                resync_seed_edges(knowledge)
-            except Exception as e:
-                log.warning("seed edge resync failed (continuing): %s", e)
-        else:
-            log.warning("skipping seed edge resync because graph customizations failed")
+    content_path = settings.content_path
+    if not content_path.exists():
+        raise RuntimeError(f"VAULT_DIR does not exist: {content_path}")
 
-        # Image indexing — only in legacy mode
-        try:
-            n_images = index_images_from_memory(knowledge, settings.memory_path, settings.openai_api_key)
-            if n_images:
-                log.info("image indexer: %d image node(s) created or updated", n_images)
-        except Exception as e:
-            log.warning("image indexing failed (continuing): %s", e)
+    log.info("vault sync: using %s", content_path)
+    try:
+        result = sync_vault_to_db(content_path, knowledge)
+        log.info("vault sync result: %s", result.get("status", "unknown"))
+    except Exception as e:
+        log.warning("vault sync failed (continuing with existing DB): %s", e)
 
     # Seed translation keys during startup, but leave the expensive auto-translate
     # and full vector reindex work for a background warmup task so the API can bind.

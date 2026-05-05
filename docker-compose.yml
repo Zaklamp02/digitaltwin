@@ -14,7 +14,6 @@ services:
     env_file: .env
     environment:
       # Container-local paths (overriding .env defaults).
-      MEMORY_DIR: /app/memory
       CHROMA_DIR: /app/chroma_db
       CREDENTIALS_FILE: /app/credentials.yaml
       LOG_FILE: /app/logs/requests.ndjson
@@ -22,7 +21,7 @@ services:
       # Widen CORS for the proxied frontend container + production domain.
       CORS_ORIGINS: "http://localhost:5173,http://localhost:4173,https://sebastiaandenboer.org,https://www.sebastiaandenboer.org"
     volumes:
-      - ./memory:/app/memory
+      - ${VAULT_DIR}:${VAULT_DIR}:ro
       - ./chroma_db:/app/chroma_db
       - ./credentials.yaml:/app/credentials.yaml
       - ./logs:/app/logs

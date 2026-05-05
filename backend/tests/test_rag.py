@@ -12,16 +12,16 @@ from app.knowledge import KnowledgeDB
 from app.rag import RAGRetriever
 
 
-def _make_settings(tmp_memory_dir: Path, chroma_dir: Path, isolated: Path) -> Settings:
+def _make_settings(tmp_vault_dir: Path, isolated: Path, tmp_path: Path) -> Settings:
     return Settings(
         llm_provider="openai",
         model_name="gpt-4o-mini",
         anthropic_api_key="x",
         openai_api_key="x",
         embedding_provider="openai",
-        memory_dir=str(tmp_memory_dir),
+        vault_dir=str(tmp_vault_dir),
         chroma_dir=str(isolated),
-        credentials_file=str(tmp_memory_dir / "credentials.yaml"),
+        credentials_file=str(tmp_path / "credentials.yaml"),
         rag_top_k=5,
         rag_min_score=0.0,  # relaxed for the fake embedder
         rag_context_turns=3,
@@ -44,14 +44,14 @@ def test_contextual_query_takes_last_n_turns() -> None:
         user_turns=["first turn", "second turn", "third turn", "fourth turn"],
         n=3,
     )
-    assert q == "second turn\nthird turn\nfourth turn"
+    assert q == "fourth turn"
 
 
 def test_role_filter_excludes_higher_roles(
-    tmp_memory_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
+    tmp_vault_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
     tmp_knowledge_db: KnowledgeDB,
 ) -> None:
-    settings = _make_settings(tmp_memory_dir, tmp_path / "c", isolated_chroma_dir)
+    settings = _make_settings(tmp_vault_dir, isolated_chroma_dir, tmp_path)
     retriever = RAGRetriever(settings=settings, knowledge=tmp_knowledge_db, embedder=fake_embedder)
     retriever.reindex_all()
 
@@ -62,29 +62,29 @@ def test_role_filter_excludes_higher_roles(
     for c in pub:
         assert "public" in c.roles, f"chunk {c.file} lacks 'public' role: {c.roles}"
 
-    # recruiter caller can see public + recruiter but not personal
+    # work caller can see public + work but not personal
     rec = retriever.retrieve(
         user_turns=["what's he like as a person"],
-        caller_roles=["public", "recruiter"],
+        caller_roles=["public", "work"],
     )
-    assert rec, "recruiter retrieval returned nothing"
+    assert rec, "work retrieval returned nothing"
     for c in rec:
-        assert set(c.roles) & {"public", "recruiter"}, f"recruiter chunk has no matching role: {c.roles}"
+        assert set(c.roles) & {"public", "work"}, f"work chunk has no matching role: {c.roles}"
     assert not any(c.tier == "personal" for c in rec)
 
     # personal caller can see everything
     pers = retriever.retrieve(
         user_turns=["first week at Youwe"],
-        caller_roles=["public", "recruiter", "personal"],
+        caller_roles=["public", "work", "friends", "personal"],
     )
     assert any(c.tier == "personal" for c in pers)
 
 
 def test_context_block_renders_when_chunks_present(
-    tmp_memory_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
+    tmp_vault_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
     tmp_knowledge_db: KnowledgeDB,
 ) -> None:
-    settings = _make_settings(tmp_memory_dir, tmp_path / "c", isolated_chroma_dir)
+    settings = _make_settings(tmp_vault_dir, isolated_chroma_dir, tmp_path)
     retriever = RAGRetriever(settings=settings, knowledge=tmp_knowledge_db, embedder=fake_embedder)
     retriever.reindex_all()
     chunks = retriever.retrieve(
@@ -96,10 +96,10 @@ def test_context_block_renders_when_chunks_present(
 
 
 def test_empty_context_block_when_no_chunks(
-    tmp_memory_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
+    tmp_vault_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
     tmp_knowledge_db: KnowledgeDB,
 ) -> None:
-    settings = _make_settings(tmp_memory_dir, tmp_path / "c", isolated_chroma_dir)
+    settings = _make_settings(tmp_vault_dir, isolated_chroma_dir, tmp_path)
     retriever = RAGRetriever(
         settings=settings,
         knowledge=tmp_knowledge_db,

@@ -48,12 +48,10 @@ def _personal(caller: Caller = Depends(caller_dep)) -> Caller:
 
 def _reject_if_vault_mode():
     """Dependency that blocks content-editing endpoints when vault mode is active."""
-    settings = get_settings()
-    if settings.vault_path and settings.vault_path.exists():
-        raise HTTPException(
-            status_code=409,
-            detail="Content is managed by the Obsidian vault. Edit .md files there and trigger a sync.",
-        )
+    raise HTTPException(
+        status_code=409,
+        detail="Content is managed by the Obsidian vault. Edit .md files there and trigger a sync.",
+    )
 
 
 # ── log helpers ───────────────────────────────────────────────────────────────
@@ -207,10 +205,10 @@ async def get_sync_status(
     from .vault_sync import get_last_sync_info
     settings = get_settings()
     last_sync = get_last_sync_info(settings.knowledge_db_path)
-    vault_path = settings.vault_path
+    vault_path = settings.content_path
     return {
-        "vault_enabled": vault_path is not None and vault_path.exists(),
-        "vault_path": str(vault_path) if vault_path else None,
+        "vault_enabled": vault_path.exists(),
+        "vault_path": str(vault_path),
         "last_sync": last_sync,
     }
 
@@ -223,8 +221,8 @@ async def trigger_sync(
     """Manually trigger a vault → DB sync."""
     from .vault_sync import sync_vault_to_db
     settings = get_settings()
-    vault_path = settings.vault_path
-    if not vault_path or not vault_path.exists():
+    vault_path = settings.content_path
+    if not vault_path.exists():
         raise HTTPException(status_code=400, detail="Vault not configured or not found")
     kb = request.app.state.knowledge
     retriever = getattr(request.app.state, "retriever", None)

@@ -52,16 +52,16 @@ class FakeLLMProvider:
 # ── fixture helpers ───────────────────────────────────────────────────────────
 
 
-def _make_settings(tmp_memory_dir: Path, chroma_dir: Path, log_path: Path) -> Settings:
+def _make_settings(tmp_vault_dir: Path, chroma_dir: Path, log_path: Path, tmp_path: Path) -> Settings:
     return Settings(
         llm_provider="openai",
         model_name="gpt-4o-mini",
         anthropic_api_key="x",
         openai_api_key="x",
         embedding_provider="openai",
-        memory_dir=str(tmp_memory_dir),
+        vault_dir=str(tmp_vault_dir),
         chroma_dir=str(chroma_dir),
-        credentials_file=str(tmp_memory_dir / "credentials.yaml"),
+        credentials_file=str(tmp_path / "credentials.yaml"),
         log_file=str(log_path),
         rag_top_k=5,
         rag_min_score=0.0,
@@ -72,14 +72,14 @@ def _make_settings(tmp_memory_dir: Path, chroma_dir: Path, log_path: Path) -> Se
 
 
 @pytest.fixture
-def chat_app(tmp_memory_dir, tmp_knowledge_db, fake_embedder, isolated_chroma_dir, tmp_path, monkeypatch):
+def chat_app(tmp_vault_dir, tmp_knowledge_db, fake_embedder, isolated_chroma_dir, tmp_path, monkeypatch):
     """Minimal FastAPI app with the chat router, a test retriever, and a fake LLM.
 
     The real lifespan is bypassed; app.state is populated directly so tests
     stay fast and isolated.
     """
     settings = _make_settings(
-        tmp_memory_dir, isolated_chroma_dir, tmp_path / "test_chat.ndjson"
+        tmp_vault_dir, isolated_chroma_dir, tmp_path / "test_chat.ndjson", tmp_path
     )
 
     retriever = RAGRetriever(settings=settings, knowledge=tmp_knowledge_db, embedder=fake_embedder)
@@ -170,20 +170,20 @@ async def test_session_event_reports_public_tier(chat_app) -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_event_reports_recruiter_tier(chat_app) -> None:
-    """The ``session`` SSE event must report the caller's resolved tier (recruiter)."""
-    caller = Caller(token="rec-abc", tier="recruiter", roles=["public", "recruiter"], label="recruiter", ip="10.0.0.2")
+async def test_session_event_reports_work_tier(chat_app) -> None:
+    """The ``session`` SSE event must report the caller's resolved tier (work)."""
+    caller = Caller(token="work-abc", tier="work", roles=["public", "work"], label="work", ip="10.0.0.2")
     events = await _stream_events(chat_app, caller, "What is he like as a person?")
 
     payload = _get_event(events, "session")
     assert payload is not None, "no session event received"
-    assert payload["tier"] == "recruiter", f"expected tier=recruiter, got {payload['tier']}"
+    assert payload["tier"] == "work", f"expected tier=work, got {payload['tier']}"
 
 
 @pytest.mark.asyncio
 async def test_session_event_reports_personal_tier(chat_app) -> None:
     """The ``session`` SSE event must report the caller's resolved tier (personal)."""
-    caller = Caller(token="pers-xyz", tier="personal", roles=["public", "recruiter", "personal"], label="inner circle", ip="10.0.0.3")
+    caller = Caller(token="pers-xyz", tier="personal", roles=["public", "work", "friends", "personal"], label="inner circle", ip="10.0.0.3")
     events = await _stream_events(chat_app, caller, "Tell me everything.")
 
     payload = _get_event(events, "session")
@@ -230,7 +230,7 @@ async def test_chunks_used_event_contains_document_file_references(chat_app) -> 
 
 @pytest.mark.asyncio
 async def test_public_caller_chunks_contain_only_public_tier(chat_app) -> None:
-    """A public-tier caller must never receive recruiter- or personal-tier chunks."""
+    """A public-tier caller must never receive work- or personal-tier chunks."""
     caller = Caller(token="", tier="public", roles=["public"], label="anon", ip="10.0.1.1")
     events = await _stream_events(chat_app, caller, "Who is Sebastiaan?")
 
@@ -243,9 +243,9 @@ async def test_public_caller_chunks_contain_only_public_tier(chat_app) -> None:
 
 
 @pytest.mark.asyncio
-async def test_recruiter_caller_cannot_see_personal_chunks(chat_app) -> None:
-    """A recruiter-tier caller must not receive personal-tier chunks."""
-    caller = Caller(token="rec-abc", tier="recruiter", roles=["public", "recruiter"], label="recruiter", ip="10.0.1.2")
+async def test_work_caller_cannot_see_personal_chunks(chat_app) -> None:
+    """A work-tier caller must not receive personal-tier chunks."""
+    caller = Caller(token="work-abc", tier="work", roles=["public", "work"], label="work", ip="10.0.1.2")
     events = await _stream_events(
         chat_app, caller, "Tell me about his personal anecdotes from Youwe"
     )
@@ -254,14 +254,14 @@ async def test_recruiter_caller_cannot_see_personal_chunks(chat_app) -> None:
     assert chunks is not None, "no chunks_used event received"
     personal_chunks = [c for c in chunks if c.get("tier") == "personal"]
     assert personal_chunks == [], (
-        f"recruiter caller received personal chunks: {personal_chunks}"
+        f"work caller received personal chunks: {personal_chunks}"
     )
 
 
 @pytest.mark.asyncio
 async def test_personal_caller_can_receive_personal_chunks(chat_app) -> None:
     """A personal-tier caller must be able to retrieve personal-tier documents."""
-    caller = Caller(token="pers-xyz", tier="personal", roles=["public", "recruiter", "personal"], label="inner circle", ip="10.0.1.3")
+    caller = Caller(token="pers-xyz", tier="personal", roles=["public", "work", "friends", "personal"], label="inner circle", ip="10.0.1.3")
     events = await _stream_events(
         chat_app, caller, "First week at Youwe inner circle story"
     )

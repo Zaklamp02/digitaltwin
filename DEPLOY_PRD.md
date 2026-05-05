@@ -160,7 +160,7 @@ Note: `.env`, `credentials.yaml`, `data/`, `chroma_db/`, and `logs/` must be set
 
 ```bash
 ssh Storybrew@192.168.68.200
-mkdir -p /volume1/docker/digital_twin/{.cloudflared,data,logs,chroma_db,memory}
+mkdir -p /volume1/docker/digital_twin/{.cloudflared,data,logs,chroma_db}
 
 # Copy secrets (done from dev machine, never committed)
 scp .env Storybrew@192.168.68.200:/volume1/docker/digital_twin/.env
@@ -169,9 +169,8 @@ scp .cloudflared/<TUNNEL_ID>.json Storybrew@192.168.68.200:/volume1/docker/digit
 scp .cloudflared/cert.pem Storybrew@192.168.68.200:/volume1/docker/digital_twin/.cloudflared/
 scp .cloudflared/config.yml Storybrew@192.168.68.200:/volume1/docker/digital_twin/.cloudflared/
 
-# Copy existing data (knowledge DB, memory)
+# Copy existing data (knowledge DB, ChromaDB)
 rsync -av data/ Storybrew@192.168.68.200:/volume1/docker/digital_twin/data/
-rsync -av memory/ Storybrew@192.168.68.200:/volume1/docker/digital_twin/memory/
 rsync -av chroma_db/ Storybrew@192.168.68.200:/volume1/docker/digital_twin/chroma_db/
 ```
 
@@ -318,15 +317,12 @@ mkdir -p $DEST
 # SQLite (hot backup via sqlite3 .backup command)
 sqlite3 /volume1/docker/digital_twin/data/knowledge.db ".backup $DEST/knowledge-$DATE.db"
 
-# Memory markdown tree
-tar -czf $DEST/memory-$DATE.tar.gz -C /volume1/docker/digital_twin memory/
-
 # Rotate: keep last 30 days
 find $DEST -name "*.db" -mtime +30 -delete
 find $DEST -name "*.tar.gz" -mtime +30 -delete
 ```
 
-ChromaDB is a derived index (can be rebuilt from memory + knowledge.db via the existing reindex endpoint) — no backup needed.
+ChromaDB is a derived index (can be rebuilt from the vault + knowledge.db via the existing reindex endpoint) — no backup needed.
 
 #### D4.2 — Health monitoring
 
@@ -385,7 +381,6 @@ STT_MODEL=whisper-1
 CORS_ORIGINS=https://sebastiaandenboer.org,https://www.sebastiaandenboer.org
 
 # Paths (container-local — do NOT change)
-MEMORY_DIR=/app/memory
 CHROMA_DIR=/app/chroma_db
 CREDENTIALS_FILE=/app/credentials.yaml
 LOG_FILE=/app/logs/requests.ndjson
