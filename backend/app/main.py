@@ -68,15 +68,18 @@ async def lifespan(app: FastAPI):
     knowledge = KnowledgeDB(settings.knowledge_db_path)
 
     content_path = settings.content_path
-    if not content_path.exists():
-        raise RuntimeError(f"VAULT_DIR does not exist: {content_path}")
+    if content_path is not None:
+        if not content_path.exists():
+            raise RuntimeError(f"VAULT_DIR does not exist: {content_path}")
 
-    log.info("vault sync: using %s", content_path)
-    try:
-        result = sync_vault_to_db(content_path, knowledge)
-        log.info("vault sync result: %s", result.get("status", "unknown"))
-    except Exception as e:
-        log.warning("vault sync failed (continuing with existing DB): %s", e)
+        log.info("vault sync: using %s", content_path)
+        try:
+            result = sync_vault_to_db(content_path, knowledge)
+            log.info("vault sync result: %s", result.get("status", "unknown"))
+        except Exception as e:
+            log.warning("vault sync failed (continuing with existing DB): %s", e)
+    else:
+        log.info("vault sync disabled: using existing knowledge DB")
 
     # Seed translation keys during startup, but leave the expensive auto-translate
     # and full vector reindex work for a background warmup task so the API can bind.

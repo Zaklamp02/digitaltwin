@@ -207,8 +207,8 @@ async def get_sync_status(
     last_sync = get_last_sync_info(settings.knowledge_db_path)
     vault_path = settings.content_path
     return {
-        "vault_enabled": vault_path.exists(),
-        "vault_path": str(vault_path),
+        "vault_enabled": bool(vault_path and vault_path.exists()),
+        "vault_path": str(vault_path) if vault_path else "",
         "last_sync": last_sync,
     }
 
@@ -222,7 +222,7 @@ async def trigger_sync(
     from .vault_sync import sync_vault_to_db
     settings = get_settings()
     vault_path = settings.content_path
-    if not vault_path.exists():
+    if vault_path is None or not vault_path.exists():
         raise HTTPException(status_code=400, detail="Vault not configured or not found")
     kb = request.app.state.knowledge
     retriever = getattr(request.app.state, "retriever", None)

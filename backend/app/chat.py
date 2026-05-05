@@ -427,9 +427,13 @@ async def content_image(
     }
 
     # Normalise and resolve; reject any attempt to escape the content directory.
+    content_path = settings.content_path
+    if content_path is None:
+        raise HTTPException(status_code=404, detail="vault not configured")
+
     try:
-        resolved = (settings.content_path / path).resolve()
-        resolved.relative_to(settings.content_path.resolve())  # raises if outside
+        resolved = (content_path / path).resolve()
+        resolved.relative_to(content_path.resolve())  # raises if outside
     except (ValueError, OSError):
         raise HTTPException(status_code=400, detail="invalid image path")
 

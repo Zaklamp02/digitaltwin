@@ -74,14 +74,9 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
-    def content_path(self) -> Path:
-        """Source-of-truth content directory.
-
-        The app is vault-only; VAULT_DIR must be configured.
-        """
-        if not self.vault_dir:
-            raise RuntimeError("VAULT_DIR must be set")
-        return Path(self.vault_dir).resolve()
+    def content_path(self) -> Path | None:
+        """Source-of-truth content directory when a vault is configured."""
+        return Path(self.vault_dir).resolve() if self.vault_dir else None
 
     @property
     def chroma_path(self) -> Path:
