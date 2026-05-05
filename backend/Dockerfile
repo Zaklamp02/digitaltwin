@@ -12,8 +12,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml README.md* ./
-COPY app ./app
+COPY backend/pyproject.toml ./pyproject.toml
+COPY README.md ./README.md
+COPY backend/app ./app
+COPY scripts/sync_vault.py /app/scripts/sync_vault.py
 
 RUN pip install --upgrade pip && pip install -e .
 
