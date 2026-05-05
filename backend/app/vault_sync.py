@@ -15,7 +15,12 @@ if TYPE_CHECKING:
 
 # Reuse the sync pipeline from scripts/
 import sys
-_scripts_dir = str(Path(__file__).resolve().parent.parent.parent / "scripts")
+_module_path = Path(__file__).resolve()
+_script_candidates = [
+    _module_path.parent.parent / "scripts",
+    _module_path.parent.parent.parent / "scripts",
+]
+_scripts_dir = next((str(path) for path in _script_candidates if path.exists()), str(_script_candidates[0]))
 if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
