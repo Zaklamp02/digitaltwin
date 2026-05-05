@@ -27,6 +27,20 @@ from .vault_sync import sync_vault_to_db
 log = logging.getLogger("ask-my-agent")
 
 
+async def _run_startup_warmup(knowledge: KnowledgeDB, settings, retriever: RAGRetriever) -> None:
+    try:
+        n_translated = await asyncio.to_thread(translate_stale, knowledge, settings.openai_api_key)
+        if n_translated:
+            log.info("translations: %d entry/entries auto-translated to Dutch", n_translated)
+    except Exception as e:
+        log.warning("translation sync failed (continuing): %s", e)
+
+    try:
+        await asyncio.to_thread(retriever.reindex_all)
+    except Exception as e:
+        log.warning("reindex skipped (using existing index): %s", e)
+
+
 def _build_provider(settings) -> LLMProvider:
     if settings.llm_provider == "anthropic":
         if not settings.anthropic_api_key:
@@ -89,30 +103,25 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             log.warning("image indexing failed (continuing): %s", e)
 
-    # Translation system — seed all translatable keys, auto-translate stale ones
+    # Seed translation keys during startup, but leave the expensive auto-translate
+    # and full vector reindex work for a background warmup task so the API can bind.
     try:
         ensure_translations_table(knowledge)
         n_seed = seed_translations(knowledge)
         if n_seed:
             log.info("translations: %d key(s) seeded or marked stale", n_seed)
-        n_translated = translate_stale(knowledge, settings.openai_api_key)
-        if n_translated:
-            log.info("translations: %d entry/entries auto-translated to Dutch", n_translated)
     except Exception as e:
         log.warning("translation sync failed (continuing): %s", e)
 
     embedder = build_embedder(settings)
     retriever = RAGRetriever(settings=settings, knowledge=knowledge, embedder=embedder)
-    try:
-        retriever.reindex_all()
-    except Exception as e:
-        log.warning("reindex skipped (using existing index): %s", e)
 
     provider = _build_provider(settings)
 
     app.state.knowledge = knowledge
     app.state.retriever = retriever
     app.state.provider = provider
+    warmup_task = asyncio.create_task(_run_startup_warmup(knowledge, settings, retriever))
 
     # Owner Telegram bot
     bot = TelegramBot(
@@ -149,6 +158,11 @@ async def lifespan(app: FastAPI):
             pass
         try:
             await asyncio.wait_for(public_bot_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+        warmup_task.cancel()
+        try:
+            await asyncio.wait_for(warmup_task, timeout=5)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             pass
         knowledge.close()
