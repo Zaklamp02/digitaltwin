@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Admin } from "./components/Admin";
 import { ChatStream } from "./components/ChatStream";
 import { ConversationEnd } from "./components/ConversationEnd";
@@ -8,6 +10,51 @@ import { useChat } from "./hooks/useChat";
 import { useSTT } from "./hooks/useSTT";
 import { useTTS } from "./hooks/useTTS";
 import { useTranslation } from "./hooks/useTranslation";
+
+// Minimal markdown components for inline chat bubbles
+const inlineMdComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold">{children}</strong>
+  ),
+  em: ({ children }: { children?: React.ReactNode }) => (
+    <em className="italic">{children}</em>
+  ),
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="underline text-indigo-600 hover:text-indigo-800">{children}</a>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  img: (props: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { node, ...rest } = props;
+    return <img {...rest} className="rounded-xl my-2 max-w-[240px] w-full shadow-sm border border-ink/10 block" loading="lazy" />;
+  },
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="list-disc list-outside ml-4 mb-2 space-y-1">{children}</ul>
+  ),
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="list-decimal list-outside ml-4 mb-2 space-y-1">{children}</ol>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => (
+    <li className="leading-relaxed">{children}</li>
+  ),
+  hr: () => <hr className="border-ink/10 my-2" />,
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   Types
+   ══════════════════════════════════════════════════════════════════════ */
+
+type MicroblogPost = {
+  id: string;
+  title: string;
+  date: string;
+  excerpt: string;
+  tags: string[];
+  url: string | null;
+};
 
 /* ══════════════════════════════════════════════════════════════════════
    Routing helpers
@@ -206,6 +253,18 @@ function Mindscape({
       })
       .catch(() => {});
   }, [token]);
+
+  /* ── Curiosa / microblog ── */
+  const [curiosaPosts, setCuriosaPostsState] = useState<MicroblogPost[]>([]);
+
+  useEffect(() => {
+    fetch("/api/curiosa?limit=5")
+      .then((r) => (r.ok ? r.json() : Promise.resolve([])))
+      .then((data: unknown) => {
+        if (Array.isArray(data)) setCuriosaPostsState(data as MicroblogPost[]);
+      })
+      .catch(() => {});
+  }, []);
 
   // Translate graph node titles when language or data changes
   const translatedNodes = useMemo(() =>
@@ -435,7 +494,6 @@ function Mindscape({
           </div>
           <div className="flex items-center gap-4 text-[0.7rem]">
             <a href="#blog-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.blog")}</a>
-            <a href="#projects-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.projects")}</a>
             <a href="#about-section" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.about")}</a>
             <a href="https://linkedin.com/in/svdenboer" target="_blank" rel="noopener noreferrer" className="text-ink/30 dark:text-white/30 hover:text-accent dark:hover:text-accent transition-colors no-underline">{t("ui.linkedin")}</a>
             {/* Settings inside navbar */}
@@ -574,7 +632,13 @@ function Mindscape({
                       {TWIN_NAME}
                     </div>
                   )}
-                  {msg.content}
+                  {msg.role === "twin" ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={inlineMdComponents as any}>
+                      {msg.content}
+                    </ReactMarkdown>
+                  ) : (
+                    msg.content
+                  )}
                 </div>
               ))}
               {chat.loading && (
@@ -667,55 +731,52 @@ function Mindscape({
           BELOW THE FOLD
           ═══════════════════════════════════════════════════════════ */}
 
-      {/* ── Blog / Curiosa ── */}
+      {/* ── Curiosa / microblog ── */}
       <section id="blog-section" className="max-w-[720px] mx-auto px-6 pt-16 pb-8 snap-start">
         <h2 className="text-[0.7rem] tracking-[0.15em] uppercase text-ink/20 dark:text-white/20 mb-8">
           {t("ui.the_curiosa")}
         </h2>
         <div className="space-y-0">
-          {[
-            { date: "25 Apr 2026", title: "Docker DNS aliases can silently hijack your other services", excerpt: "Found out the hard way: if two Docker Compose stacks share a network and both have a service named \"frontend\"...", tags: ["TIL", "Docker"] },
-            { date: "22 Apr 2026", title: "Why I built my own digital twin instead of using a template", excerpt: "Every AI chatbot builder promises \"your personal assistant in 5 minutes.\"...", tags: ["AI", "Projects"] },
-          ].map((post, i) => (
-            <div key={i} className="py-5 border-b border-ink/[0.06] dark:border-white/[0.06] last:border-b-0">
-              <div className="text-[0.7rem] text-ink/20 dark:text-white/20">{post.date}</div>
-              <div className="text-[0.95rem] font-semibold text-ink dark:text-white mt-1">{post.title}</div>
-              <p className="text-[0.8rem] text-ink/50 dark:text-white/50 mt-1.5 leading-relaxed">{post.excerpt}</p>
-              <div className="flex gap-2 mt-2">
-                {post.tags.map((tag) => (
-                  <span key={tag} className="text-[0.65rem] px-2 py-0.5 rounded-full bg-accent/[0.08] text-accent font-medium">{tag}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        <a href="#" className="inline-block mt-6 text-[0.8rem] text-ink/20 dark:text-white/20 pointer-events-none">{t("ui.more_posts_coming")}</a>
-      </section>
-
-      {/* ── Projects ── */}
-      <section id="projects-section" className="max-w-[720px] mx-auto px-6 pb-8 snap-start">
-        <h2 className="text-[0.7rem] tracking-[0.15em] uppercase text-ink/20 dark:text-white/20 mb-8">
-          {t("ui.projects_heading")}
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {[
-            { title: "StoryBrew", tag: "Web app · dromenbrouwer.nl", desc: "AI-powered interactive story platform. Generative AI meets narrative design.", href: "https://dromenbrouwer.nl" },
-            { title: "Digital Twin", tag: "This site · FastAPI + React", desc: "RAG-powered AI agent with knowledge graph, multi-tier access, and Telegram.", href: "https://github.com/Zaklamp02/digitaltwin" },
-            { title: "RealLifeRisk", tag: "R/Shiny · Board game", desc: "Companion app for a physical strategy game. Move validation over local WiFi.", href: "https://github.com/Zaklamp02/RealLifeRisk" },
-            { title: "Woodworking", tag: "Physical · Ongoing", desc: "Built a full kitchen from scratch. Currently: bespoke cabinet with reading nook." },
-          ].map((proj) => (
-            <a
-              key={proj.title}
-              href={proj.href ?? "#"}
-              target={proj.href ? "_blank" : undefined}
-              rel={proj.href ? "noopener noreferrer" : undefined}
-              className="block border border-ink/[0.06] dark:border-white/[0.06] rounded-xl p-5 no-underline text-ink dark:text-white hover:border-accent hover:shadow-md transition-all"
-            >
-              <h3 className="text-[0.95rem] font-semibold">{proj.title}</h3>
-              <div className="text-[0.7rem] text-accent mt-0.5">{proj.tag}</div>
-              <p className="text-[0.8rem] text-ink/50 dark:text-white/50 mt-2 leading-relaxed">{proj.desc}</p>
-            </a>
-          ))}
+          {curiosaPosts.length === 0 ? (
+            <p className="text-[0.8rem] text-ink/30 dark:text-white/30 py-4">{t("ui.more_posts_coming")}</p>
+          ) : (
+            curiosaPosts.map((post) => {
+              const displayDate = post.date
+                ? new Date(post.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                : "";
+              const inner = (
+                <>
+                  <div className="text-[0.7rem] text-ink/20 dark:text-white/20">{displayDate}</div>
+                  <div className="text-[0.95rem] font-semibold text-ink dark:text-white mt-1">{post.title}</div>
+                  {post.excerpt && (
+                    <p className="text-[0.8rem] text-ink/50 dark:text-white/50 mt-1.5 leading-relaxed">{post.excerpt}</p>
+                  )}
+                  {post.tags.length > 0 && (
+                    <div className="flex gap-2 mt-2">
+                      {post.tags.map((tag) => (
+                        <span key={tag} className="text-[0.65rem] px-2 py-0.5 rounded-full bg-accent/[0.08] text-accent font-medium">{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+              return post.url ? (
+                <a
+                  key={post.id}
+                  href={post.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block py-5 border-b border-ink/[0.06] dark:border-white/[0.06] last:border-b-0 no-underline hover:opacity-80 transition-opacity"
+                >
+                  {inner}
+                </a>
+              ) : (
+                <div key={post.id} className="py-5 border-b border-ink/[0.06] dark:border-white/[0.06] last:border-b-0">
+                  {inner}
+                </div>
+              );
+            })
+          )}
         </div>
       </section>
 

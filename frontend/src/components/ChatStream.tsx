@@ -23,14 +23,26 @@ const QUICK_PROMPTS_FALLBACK = [
 
 // Custom components for ReactMarkdown — render inside the bubble without extra padding
 const mdComponents = {
+  h1: ({ children }: { children?: React.ReactNode }) => (
+    <h1 className="text-lg font-bold mt-3 mb-1.5 first:mt-0">{children}</h1>
+  ),
+  h2: ({ children }: { children?: React.ReactNode }) => (
+    <h2 className="text-base font-bold mt-2.5 mb-1 first:mt-0">{children}</h2>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="text-[15px] font-semibold mt-2 mb-1 first:mt-0">{children}</h3>
+  ),
+  h4: ({ children }: { children?: React.ReactNode }) => (
+    <h4 className="text-[15px] font-medium mt-1.5 mb-0.5 first:mt-0">{children}</h4>
+  ),
   p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="mb-1.5 last:mb-0">{children}</p>
+    <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
   ),
   ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul className="list-disc list-outside ml-4 mb-1.5 space-y-0.5">{children}</ul>
+    <ul className="list-disc list-outside ml-4 mb-2 space-y-1">{children}</ul>
   ),
   ol: ({ children }: { children?: React.ReactNode }) => (
-    <ol className="list-decimal list-outside ml-4 mb-1.5 space-y-0.5">{children}</ol>
+    <ol className="list-decimal list-outside ml-4 mb-2 space-y-1">{children}</ol>
   ),
   li: ({ children }: { children?: React.ReactNode }) => (
     <li className="leading-relaxed">{children}</li>

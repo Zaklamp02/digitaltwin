@@ -444,6 +444,8 @@ class KnowledgeDB:
         all_node_ids = {n.id for n in nodes}
         root = next((n.id for n in nodes if n.id == "identity"), None)
         if root is None:
+            root = next((n.id for n in nodes if n.id == "digital-twin"), None)
+        if root is None:
             root = next((n.id for n in nodes if n.type == "person"), None)
         tiers: dict[str, int] = {}
         if root and root in all_node_ids:
@@ -576,13 +578,11 @@ def migrate_from_memory(memory_dir: Path, db: KnowledgeDB) -> int:
     for path in sorted(memory_dir.rglob("*.md")):
         try:
             rel = str(path.relative_to(memory_dir))
-            # System prompt → system node in the DB
+            # System prompt is admin-managed in the DB — skip vault file if present
             if rel == "_system.md":
-                node_type = "system"
-                node_id = "_system"
-            else:
-                node_type = _infer_node_type(rel)
-                node_id = rel.removesuffix(".md").replace("/", "--")
+                continue
+            node_type = _infer_node_type(rel)
+            node_id = rel.removesuffix(".md").replace("/", "--")
             raw = path.read_text(encoding="utf-8")
             roles = _parse_roles_from_md(raw)
             body = _strip_frontmatter(raw)

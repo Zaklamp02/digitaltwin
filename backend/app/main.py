@@ -182,6 +182,61 @@ def create_app() -> FastAPI:
             "embedding_provider": settings.embedding_provider,
         }
 
+    @app.get("/api/curiosa")
+    async def get_curiosa(limit: int = 10):
+        """Return public microblog posts, newest first.
+
+        Sources posts from the 'microblog' notebook in the knowledge graph:
+        - Vault mode: children of the 'microblog' node via 'includes' edges.
+        - Legacy mode: nodes whose ID starts with 'microblog--'.
+        Posts are sorted by the 'date' metadata field (ISO YYYY-MM-DD), desc.
+        """
+        knowledge = app.state.knowledge
+
+        # Collect candidates from both modes (union, deduped)
+        candidate_ids: set[str] = set()
+
+        # Vault mode: edge-based children of the 'Microblog' notebook root.
+        # The vault sync uses filename stem as node ID, so Microblog/Microblog.md → "Microblog".
+        # Also try lowercase "microblog" as a fallback for legacy/re-exported vaults.
+        for parent_id in ("Microblog", "microblog"):
+            edges = knowledge.list_edges(node_id=parent_id)
+            for e in edges:
+                if e.source_id == parent_id and e.type == "includes":
+                    candidate_ids.add(e.target_id)
+
+        # Legacy mode: nodes whose ID starts with 'microblog--'
+        for node in knowledge.list_nodes():
+            if node.id.startswith("microblog--"):
+                candidate_ids.add(node.id)
+
+        posts = []
+        for nid in candidate_ids:
+            node = knowledge.get_node(nid)
+            if node is None:
+                continue
+            # Only surface publicly visible posts
+            if "public" not in node.roles:
+                continue
+            meta = node.metadata or {}
+            # Auto-generate excerpt from body if not set explicitly
+            excerpt = meta.get("excerpt") or ""
+            if not excerpt and node.body:
+                excerpt = node.body[:220].rsplit(" ", 1)[0] + "…"
+            raw_tags = meta.get("tags", [])
+            tags = raw_tags if isinstance(raw_tags, list) else [raw_tags]
+            posts.append({
+                "id": node.id,
+                "title": node.title,
+                "date": meta.get("date", node.created_at[:10] if node.created_at else ""),
+                "excerpt": excerpt,
+                "tags": tags,
+                "url": meta.get("url") or None,
+            })
+
+        posts.sort(key=lambda p: p.get("date", ""), reverse=True)
+        return posts[:limit]
+
     return app
 
 

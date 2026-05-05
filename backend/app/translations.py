@@ -76,9 +76,8 @@ UI_STRINGS: dict[str, str] = {
     "about.footer": "Built with too many Docker containers",
 
     # Blog/Projects section headers
-    "ui.the_curiosa": "The Curiosa",
-    "ui.projects_heading": "Projects",
-    "ui.more_posts_coming": "More posts coming soon",
+    "ui.the_curiosa": "Microblog",
+    "ui.more_posts_coming": "No posts yet — check back soon",
 
     # Chat welcome + chips (backend-configured but we provide fallback translations)
     "chat.welcome": "Hey! I'm Sebastiaan's digital twin. Ask me about my experience, projects, or how I think about AI.",

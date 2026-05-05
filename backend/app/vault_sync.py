@@ -75,7 +75,16 @@ def sync_vault_to_db(vault_path: Path, knowledge: "KnowledgeDB",
         for nid in changed_ids:
             node = knowledge.get_node(nid)
             if node and node.type != "system":
-                retriever.reindex_node(node)
+                # Only index non-personal nodes in ChromaDB for RAG
+                roles = node.roles if hasattr(node, 'roles') else []
+                if not any(r for r in roles if r != "personal"):
+                    # Personal-only node — remove from index if it was there
+                    try:
+                        retriever.delete_node_from_index(nid)
+                    except Exception:
+                        pass
+                else:
+                    retriever.reindex_node(node)
 
         log.info("vault sync: re-indexed %d nodes in ChromaDB", len(changed_ids))
 

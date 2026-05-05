@@ -7,8 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 // English fallback strings (same keys as backend UI_STRINGS)
 const EN: Record<string, string> = {
   // Navigation
-  "ui.blog": "Blog",
-  "ui.projects": "Projects",
+  "ui.blog": "Microblog",
   "ui.about": "About",
   "ui.linkedin": "LinkedIn",
   "ui.github": "GitHub",
@@ -57,9 +56,8 @@ const EN: Record<string, string> = {
   "about.footer": "Built with too many Docker containers",
 
   // Section headers
-  "ui.the_curiosa": "The Curiosa",
-  "ui.projects_heading": "Projects",
-  "ui.more_posts_coming": "More posts coming soon",
+  "ui.the_curiosa": "Microblog",
+  "ui.more_posts_coming": "No posts yet — check back soon",
 
   // Chat welcome + chips
   "chat.welcome": "Hey! I'm Sebastiaan's digital twin. Ask me about my experience, projects, or how I think about AI.",

@@ -10,6 +10,8 @@ interface Props {
   /** External text (e.g. just-transcribed speech) to inject into the field. */
   injected?: string;
   t?: (key: string, fallback?: string) => string;
+  /** Max characters per message (default 140). */
+  charLimit?: number;
 }
 
 export function InputBar({
@@ -21,10 +23,12 @@ export function InputBar({
   onMic,
   injected,
   t: tProp,
+  charLimit = 140,
 }: Props) {
   const t = tProp ?? ((k: string, fb?: string) => fb ?? k);
   const [value, setValue] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const remaining = charLimit - value.length;
 
   useEffect(() => {
     if (injected !== undefined && injected.length > 0) {
@@ -87,9 +91,10 @@ export function InputBar({
         <textarea
           ref={taRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => setValue(e.target.value.slice(0, charLimit))}
           onKeyDown={onKey}
           rows={1}
+          maxLength={charLimit}
           placeholder={disabled ? t("ui.conversation_ended", "Conversation ended.") : t("ui.ask_placeholder", "Ask about Sebastiaan…")}
           disabled={disabled}
           className="flex-1 resize-none rounded-2xl border border-ink/15 dark:border-white/15 bg-white dark:bg-gray-800 px-4 py-2.5 text-[15px] text-ink dark:text-white leading-6 placeholder:text-ink/40 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-ink/5 dark:disabled:bg-white/5 disabled:text-ink/40 dark:disabled:text-white/40"
@@ -108,6 +113,12 @@ export function InputBar({
           </svg>
         </button>
       </div>
+      {/* Character counter — only visible when approaching the limit */}
+      {value.length > 0 && (
+        <div className={`text-right text-[11px] mt-1 pr-1 transition-colors ${remaining <= 20 ? (remaining <= 0 ? "text-red-500" : "text-amber-500") : "text-ink/30 dark:text-white/25"}`}>
+          {remaining}
+        </div>
+      )}
     </div>
   );
 }

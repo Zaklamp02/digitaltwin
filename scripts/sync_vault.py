@@ -23,7 +23,7 @@ import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +40,7 @@ class VaultNode:
     type: str
     title: str
     body: str
-    roles: list[str] = field(default_factory=lambda: ["public"])
+    roles: list[str] = field(default_factory=lambda: ["personal"])
     metadata: dict[str, Any] = field(default_factory=dict)
     source_path: str = ""           # relative path within vault
     content_hash: str = ""          # hash of body + frontmatter for change detection
@@ -57,18 +57,18 @@ class VaultEdge:
 # ── vault parser ───────────────────────────────────────────────────────
 
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
-WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
 
 # Frontmatter keys that map to promoted node fields (not stored in metadata)
-NODE_FIELDS = {"type", "id", "title", "roles", "links"}
+NODE_FIELDS = {"visibility", "parent"}
 # Metadata keys to promote to top-level metadata dict
-META_KEYS = {"featured", "icon", "order", "notebook_root", "url",
+META_KEYS = {"featured", "icon", "notebook_root", "url", "date", "tags",
              "file", "original_filename", "mime_type", "extra_files", "extra_meta"}
 
-CONTAINMENT_EDGE_TYPES = {"has", "includes", "nb_page"}
+CONTAINMENT_EDGE_TYPES = {"includes"}
 
-# Default roles if not specified
-DEFAULT_ROLES = ["public"]
+# Default visibility → roles mapping
+DEFAULT_VISIBILITY = "personal"  # not indexed for RAG by default
 
 
 def _parse_frontmatter(content: str) -> tuple[dict, str]:
@@ -90,48 +90,71 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
     return fm, body
 
 
-def _resolve_wikilinks(fm_links: dict, filename_to_id: dict[str, str]) -> list[VaultEdge]:
-    """Resolve frontmatter links: {edge_type: "[[target]]" or ["[[t1]]", "[[t2]]"]}."""
+def _resolve_body_wikilinks(
+    body: str,
+    source_id: str,
+    filename_to_id: dict[str, str],
+    document_files: dict[str, str] | None = None,
+) -> tuple[list[VaultEdge], list[str]]:
+    """Extract [[wikilinks]] from body text and create relates_to edges.
+
+    Returns (edges, attached_document_paths).
+    """
     edges = []
-    for edge_type, targets in fm_links.items():
-        if isinstance(targets, str):
-            targets = [targets]
-        for t in targets:
-            # Extract wikilink name
-            m = WIKILINK_RE.search(str(t))
-            if m:
-                link_name = m.group(1).strip()
-                # Resolve to node ID
-                target_id = filename_to_id.get(link_name)
-                if target_id:
-                    edges.append(VaultEdge(source_id="", target_id=target_id, type=edge_type))
-                else:
-                    log.warning("Unresolved wikilink: [[%s]]", link_name)
-    return edges
+    doc_paths: list[str] = []
+    seen = set()
+    for m in WIKILINK_RE.finditer(body):
+        link_name = m.group(1).strip()
+        if link_name in seen:
+            continue
+        seen.add(link_name)
+        target_id = filename_to_id.get(link_name)
+        if target_id and target_id != source_id:
+            edges.append(VaultEdge(source_id=source_id, target_id=target_id, type="relates_to"))
+        elif document_files and link_name in document_files:
+            doc_paths.append(document_files[link_name])
+        elif not target_id:
+            log.warning("Unresolved wikilink: [[%s]] in %s", link_name, source_id)
+    return edges, doc_paths
 
 
 def _content_hash(frontmatter: dict, body: str) -> str:
     """Hash the content for change detection."""
+    # Exclude managed keys (injected by sync) from hash to avoid false diffs
+    fm_clean = {k: v for k, v in frontmatter.items() if k != MANAGED_FM_KEY}
     h = hashlib.sha256()
-    h.update(json.dumps(frontmatter, sort_keys=True, default=str).encode())
+    h.update(json.dumps(fm_clean, sort_keys=True, default=str).encode())
     h.update(body.encode())
     return h.hexdigest()[:16]
 
 
-def _id_from_path(rel_path: str) -> str:
+def _id_from_path(rel_path: str, vault_name: str = "") -> str:
     """Derive a node ID from a relative vault path.
 
+    For folder notes (filename matches parent folder), uses the stem.
+    For regular files, uses the filename stem.
+
     Examples:
-        work/career/_index.md → career
-        work/experience--youwe/clients/projects--pricing-engine.md → projects--pricing-engine
-        _index.md → identity (root)
+        education/education.md → education
+        work/career/philips.md → philips
+        digital-twin.md → digital-twin
     """
-    p = Path(rel_path)
-    stem = p.stem
-    if stem == "_index":
-        # Use the parent directory name as the ID
-        return p.parent.name if p.parent.name else "identity"
-    return stem
+    return Path(rel_path).stem
+
+
+def _is_folder_note(f: Path) -> bool:
+    """Check if a file is a folder note (filename matches parent folder name)."""
+    return f.stem == f.parent.name
+
+
+def _title_from_stem(stem: str) -> str:
+    """Derive a human-readable title from a filename stem.
+
+    Preserves the original casing of the stem; only replaces
+    hyphens/underscores with spaces so that acronyms like ACE or
+    BIG4 are not mangled by str.title().
+    """
+    return stem.replace("-", " ").replace("_", " ")
 
 
 def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dict]:
@@ -143,12 +166,14 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
     edges: list[VaultEdge] = []
     settings: dict = {}
 
-    # Collect all .md files (skip .obsidian, documents)
+    # Collect all .md files (skip .obsidian, templates, documents)
     md_files: list[Path] = []
     for f in sorted(vault_path.rglob("*.md")):
         rel = f.relative_to(vault_path)
-        # Skip hidden dirs, documents, etc.
+        # Skip hidden dirs, templates
         if any(part.startswith(".") for part in rel.parts):
+            continue
+        if rel.parts and rel.parts[0] == "templates":
             continue
         md_files.append(f)
 
@@ -161,20 +186,20 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
         if f.name in ("_system.md", "_config.md"):
             continue
 
-        content = f.read_text(encoding="utf-8")
-        fm, _ = _parse_frontmatter(content)
-
-        # ID from frontmatter takes precedence, then derive from path
-        node_id = fm.get("id") or _id_from_path(rel)
+        vault_name = vault_path.name
+        node_id = _id_from_path(rel, vault_name)
         filename_to_id[f.stem] = node_id
-        # Also map the slug (for wikilinks that reference by slug)
-        filename_to_id[_id_from_path(rel)] = node_id
-        # Also map the frontmatter ID itself (e.g. "nb-work" for _index.md files)
-        if fm.get("id"):
-            filename_to_id[fm["id"]] = node_id
-        # Also map the node_id (for self-referencing resolution)
-        filename_to_id[node_id] = node_id
         file_node_ids[rel] = node_id
+
+    # Build document/attachment filename map (for resolving [[file.pdf]] links)
+    document_files: dict[str, str] = {}  # stem-or-full-name → relative path
+    docs_dir = vault_path / "documents"
+    if docs_dir.is_dir():
+        for df in docs_dir.iterdir():
+            if df.is_file() and not df.name.startswith("."):
+                rel_path = str(df.relative_to(vault_path))
+                document_files[df.stem] = rel_path
+                document_files[df.name] = rel_path  # also match with extension
 
     # Second pass: parse all files into nodes and edges
     for f in md_files:
@@ -184,7 +209,6 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
 
         # Handle special files
         if f.name == "_system.md":
-            # System prompt — just the body, no frontmatter
             nodes.append(VaultNode(
                 id="_system",
                 type="system",
@@ -197,7 +221,6 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
             continue
 
         if f.name == "_config.md":
-            # Website config — extract settings from frontmatter
             for key in ("welcome_message", "suggestion_chips", "translation_prompt"):
                 if key in fm:
                     val = fm[key]
@@ -205,31 +228,50 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
             continue
 
         # Regular node
-        node_id = fm.get("id") or _id_from_path(rel)
-        node_type = fm.get("type", "document")
-        title = fm.get("title", f.stem.replace("-", " ").replace("_", " ").title())
-        roles = fm.get("roles", DEFAULT_ROLES)
-        if not roles:
-            roles = DEFAULT_ROLES
+        node_id = _id_from_path(rel, vault_path.name)
+        node_type = "page"  # uniform type; structure comes from folders
+        # Prefer H1/H2 from body over filename stem
+        _h1_match = re.search(r"^#{1,2}\s+(.+)$", body, re.MULTILINE)
+        title = _h1_match.group(1).strip() if _h1_match else _title_from_stem(f.stem)
+
+        # Visibility → roles mapping
+        # Supports: string ("public", "private", "personal", "work", "friends", …)
+        # or a list (["work", "friends"]) for multi-class access control.
+        # "private" is an alias for "personal".
+        visibility = (fm.get("visibility", DEFAULT_VISIBILITY) if fm else DEFAULT_VISIBILITY)
+        if isinstance(visibility, list):
+            roles = ["personal" if str(v) == "private" else str(v) for v in visibility]
+        elif str(visibility) == "private":
+            roles = ["personal"]
+        else:
+            roles = [str(visibility)]
 
         # Build metadata from promoted keys
         metadata: dict[str, Any] = {}
-        for key in META_KEYS:
-            if key in fm:
-                if key == "extra_meta":
-                    # Merge extra_meta contents into metadata
-                    extra = fm[key]
-                    if isinstance(extra, str):
-                        try:
-                            extra = json.loads(extra)
-                        except json.JSONDecodeError:
-                            pass
-                    if isinstance(extra, dict):
-                        metadata.update(extra)
-                elif key == "file":
-                    metadata["file_path"] = fm[key]
-                else:
-                    metadata[key] = fm[key]
+        if fm:
+            for key in META_KEYS:
+                if key in fm:
+                    if key == "extra_meta":
+                        extra = fm[key]
+                        if isinstance(extra, str):
+                            try:
+                                extra = json.loads(extra)
+                            except json.JSONDecodeError:
+                                pass
+                        if isinstance(extra, dict):
+                            metadata.update(extra)
+                    elif key == "file":
+                        metadata["file_path"] = fm[key]
+                    else:
+                        val = fm[key]
+                        # PyYAML parses bare dates as datetime.date — convert to ISO string
+                        import datetime as _dt
+                        if isinstance(val, (_dt.date, _dt.datetime)):
+                            val = val.isoformat()
+                        # Lists of dates (e.g. tags with date-like entries)
+                        elif isinstance(val, list):
+                            val = [v.isoformat() if isinstance(v, (_dt.date, _dt.datetime)) else v for v in val]
+                        metadata[key] = val
 
         node = VaultNode(
             id=node_id,
@@ -239,19 +281,23 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
             roles=roles,
             metadata=metadata,
             source_path=rel,
-            content_hash=_content_hash(fm, body),
+            content_hash=_content_hash(fm or {}, body),
         )
         nodes.append(node)
 
-        # Resolve cross-link edges from frontmatter
-        if "links" in fm and isinstance(fm["links"], dict):
-            link_edges = _resolve_wikilinks(fm["links"], filename_to_id)
-            for edge in link_edges:
-                edge.source_id = node_id
-                edges.append(edge)
+        # Resolve cross-link edges from wikilinks in body text
+        link_edges, doc_paths = _resolve_body_wikilinks(body, node_id, filename_to_id, document_files)
+        edges.extend(link_edges)
+        if doc_paths:
+            existing = metadata.get("extra_files", [])
+            metadata["extra_files"] = list(dict.fromkeys(existing + doc_paths))
+
+    # Detect root node: the folder note at vault root (stem matches vault folder name)
+    root_note = vault_path / f"{vault_path.name}.md"
+    root_id = vault_path.name if root_note.exists() else "identity"
 
     # Third pass: infer containment edges from folder hierarchy
-    # A file inside a folder is a child of the folder's _index node
+    # Folder notes are the "index" of a folder; other files are children.
     for f in md_files:
         rel = str(f.relative_to(vault_path))
         if f.name in ("_system.md", "_config.md"):
@@ -261,42 +307,49 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
         if not node_id:
             continue
 
-        # For _index.md files, the node IS the folder.
-        # Its parent is the _index.md in the grandparent directory.
-        if f.name == "_index.md":
-            grandparent = f.parent.parent
-            if grandparent == vault_path or f.parent == vault_path:
-                # Top-level _index.md or one level deep — child of identity
-                if node_id != "identity":
-                    edges.append(VaultEdge(
-                        source_id="identity",
-                        target_id=node_id,
-                        type="includes",
-                    ))
+        if _is_folder_note(f):
+            # This is a folder note — its parent is:
+            #   - the folder note of the grandparent directory, or
+            #   - root (if at top level or IS the vault root)
+            if f.parent == vault_path:
+                # This IS the vault root folder note (e.g. digital-twin.md)
+                # No parent edge needed
+                pass
             else:
-                parent_index = grandparent / "_index.md"
-                parent_rel = str(parent_index.relative_to(vault_path))
-                parent_id = file_node_ids.get(parent_rel)
-                if parent_id and parent_id != node_id:
-                    edges.append(VaultEdge(
-                        source_id=parent_id,
-                        target_id=node_id,
-                        type="includes",
-                    ))
+                grandparent = f.parent.parent
+                if grandparent == vault_path:
+                    # Top-level notebook — child of root
+                    if node_id != root_id:
+                        edges.append(VaultEdge(
+                            source_id=root_id,
+                            target_id=node_id,
+                            type="includes",
+                        ))
+                else:
+                    # Find the folder note in the grandparent directory
+                    parent_note = grandparent / f"{grandparent.name}.md"
+                    parent_rel = str(parent_note.relative_to(vault_path))
+                    parent_id = file_node_ids.get(parent_rel)
+                    if parent_id and parent_id != node_id:
+                        edges.append(VaultEdge(
+                            source_id=parent_id,
+                            target_id=node_id,
+                            type="includes",
+                        ))
         else:
-            # Regular file — parent is the _index.md in the same directory
+            # Regular file — parent is the folder note of the same directory
             parent_dir = f.parent
             if parent_dir == vault_path:
-                # Top-level file — child of root (identity)
-                if node_id != "identity":
+                # Top-level file — child of root
+                if node_id != root_id:
                     edges.append(VaultEdge(
-                        source_id="identity",
+                        source_id=root_id,
                         target_id=node_id,
                         type="includes",
                     ))
             else:
-                parent_index = parent_dir / "_index.md"
-                parent_rel = str(parent_index.relative_to(vault_path))
+                parent_note = parent_dir / f"{parent_dir.name}.md"
+                parent_rel = str(parent_note.relative_to(vault_path))
                 parent_id = file_node_ids.get(parent_rel)
                 if parent_id and parent_id != node_id:
                     edges.append(VaultEdge(
@@ -306,6 +359,123 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
                     ))
 
     return nodes, edges, settings
+
+
+# ── parent-link injector ───────────────────────────────────────────────
+
+# Frontmatter keys managed by the sync script (written back to vault files)
+MANAGED_FM_KEY = "parent"
+
+
+def inject_parent_links(vault_path: Path) -> int:
+    """Write a ``parent: "[[…]]"`` property into every vault note's frontmatter.
+
+    The parent is derived from the folder hierarchy:
+    * A **folder note** (e.g. ``Career/Career.md``) gets the grandparent
+      folder note as parent.
+    * A **regular file** (e.g. ``Career/Youwe.md``) gets the folder note
+      of its directory as parent.
+    * Top-level files/folders get the vault-root folder note as parent.
+    * The vault-root folder note itself (``digital-twin.md``) gets no parent.
+
+    Returns the number of files updated.
+    """
+    root_note = vault_path / f"{vault_path.name}.md"
+    root_stem = vault_path.name if root_note.exists() else None
+
+    md_files: list[Path] = []
+    for f in sorted(vault_path.rglob("*.md")):
+        rel = f.relative_to(vault_path)
+        if any(part.startswith(".") for part in rel.parts):
+            continue
+        if rel.parts and rel.parts[0] == "templates":
+            continue
+        if f.name in ("_system.md", "_config.md"):
+            continue
+        md_files.append(f)
+
+    updated = 0
+
+    for f in md_files:
+        # Determine desired parent stem
+        parent_stem = _determine_parent_stem(f, vault_path, root_stem)
+
+        # Read file
+        content = f.read_text(encoding="utf-8")
+        fm_dict, body = _parse_frontmatter(content)
+
+        current_parent = fm_dict.get(MANAGED_FM_KEY, "")
+        desired_value = f"\"[[{parent_stem}]]\"" if parent_stem else ""
+
+        # Extract the current wikilink target from the parent value
+        current_target = ""
+        if current_parent:
+            m = WIKILINK_RE.search(str(current_parent))
+            if m:
+                current_target = m.group(1).strip()
+
+        if current_target == (parent_stem or ""):
+            continue  # already correct
+
+        # Rebuild frontmatter with updated parent
+        new_content = _rebuild_with_parent(content, parent_stem)
+        if new_content != content:
+            f.write_text(new_content, encoding="utf-8")
+            updated += 1
+            log.debug("parent link: %s → [[%s]]", f.relative_to(vault_path), parent_stem)
+
+    return updated
+
+
+def _determine_parent_stem(f: Path, vault_path: Path, root_stem: str | None) -> str | None:
+    """Return the stem of the parent note for file *f*, or None for the root.
+
+    Walks up the directory tree to find the nearest ancestor with a folder note.
+    """
+    if root_stem and f.stem == root_stem and f.parent == vault_path:
+        return None  # vault root note has no parent
+
+    if _is_folder_note(f):
+        # Folder note: parent is the nearest ancestor folder note above the parent dir
+        return _find_ancestor_folder_note(f.parent.parent, vault_path, root_stem)
+    else:
+        # Regular file: parent is the folder note of its directory (or walk up)
+        return _find_ancestor_folder_note(f.parent, vault_path, root_stem)
+
+
+def _find_ancestor_folder_note(start_dir: Path, vault_path: Path, root_stem: str | None) -> str | None:
+    """Walk up from *start_dir* to find the nearest directory with a folder note."""
+    current = start_dir
+    while current != vault_path and current.is_relative_to(vault_path):
+        folder_note = current / f"{current.name}.md"
+        if folder_note.exists():
+            return folder_note.stem
+        current = current.parent
+    return root_stem
+
+
+def _rebuild_with_parent(content: str, parent_stem: str | None) -> str:
+    """Insert or update the ``parent`` key in YAML frontmatter."""
+    m = FRONTMATTER_RE.match(content)
+    if not m:
+        # No frontmatter — create one
+        if parent_stem:
+            return f'---\nparent: "[[{parent_stem}]]"\n---\n\n{content}'
+        return content
+
+    fm_text = m.group(1)
+    after_fm = content[m.end():]
+
+    # Remove any existing parent line
+    fm_lines = fm_text.split("\n")
+    fm_lines = [l for l in fm_lines if not l.strip().startswith(f"{MANAGED_FM_KEY}:")]
+
+    # Add new parent line (at end, before closing ---)
+    if parent_stem:
+        fm_lines.append(f'parent: "[[{parent_stem}]]"')
+
+    new_fm = "\n".join(fm_lines)
+    return f"---\n{new_fm}\n---\n{after_fm}"
 
 
 # ── diff engine ────────────────────────────────────────────────────────
@@ -411,6 +581,22 @@ def _safe_json(val, default):
         return default
 
 
+def _compute_edge_roles(db: sqlite3.Connection, source_id: str, target_id: str) -> list[str]:
+    """Derive edge roles from endpoint nodes.
+
+    Uses the intersection of both endpoints' roles so the edge is
+    visible to anyone who can see both nodes.  Falls back to the
+    union when one node is missing.
+    """
+    src_row = db.execute("SELECT roles FROM nodes WHERE id=?", (source_id,)).fetchone()
+    tgt_row = db.execute("SELECT roles FROM nodes WHERE id=?", (target_id,)).fetchone()
+    src_roles = set(_safe_json(src_row["roles"], [])) if src_row else set()
+    tgt_roles = set(_safe_json(tgt_row["roles"], [])) if tgt_row else set()
+    if src_roles and tgt_roles:
+        return sorted(src_roles & tgt_roles)
+    return sorted(src_roles | tgt_roles)
+
+
 # ── DB writer ──────────────────────────────────────────────────────────
 
 def apply_diff(diff: SyncDiff, db: sqlite3.Connection) -> dict[str, int]:
@@ -425,13 +611,19 @@ def apply_diff(diff: SyncDiff, db: sqlite3.Connection) -> dict[str, int]:
             db.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
             counts["deleted"] += 1
 
+        def _json(obj: Any) -> str:
+            """JSON serialiser that converts date/datetime to ISO strings."""
+            if isinstance(obj, (date, datetime)):
+                return obj.isoformat()
+            raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+
         # Create nodes
         for n in diff.nodes_to_create:
             db.execute("""
                 INSERT INTO nodes (id, type, title, body, metadata, roles, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (n.id, n.type, n.title, n.body,
-                  json.dumps(n.metadata), json.dumps(n.roles), now, now))
+                  json.dumps(n.metadata, default=_json), json.dumps(n.roles), now, now))
             counts["created"] += 1
 
         # Update nodes
@@ -440,7 +632,7 @@ def apply_diff(diff: SyncDiff, db: sqlite3.Connection) -> dict[str, int]:
                 UPDATE nodes SET type=?, title=?, body=?, metadata=?, roles=?, updated_at=?
                 WHERE id=?
             """, (n.type, n.title, n.body,
-                  json.dumps(n.metadata), json.dumps(n.roles), now, n.id))
+                  json.dumps(n.metadata, default=_json), json.dumps(n.roles), now, n.id))
             counts["updated"] += 1
 
         # Delete edges
@@ -452,15 +644,22 @@ def apply_diff(diff: SyncDiff, db: sqlite3.Connection) -> dict[str, int]:
         for e in diff.edges_to_create:
             eid = hashlib.sha256(f"{e.source_id}:{e.target_id}:{e.type}".encode()).hexdigest()[:16]
             try:
+                edge_roles = _compute_edge_roles(db, e.source_id, e.target_id)
                 db.execute("""
                     INSERT INTO edges (id, source_id, target_id, type, label, roles, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (eid, e.source_id, e.target_id, e.type, e.label,
-                      json.dumps([]), now))
+                      json.dumps(edge_roles), now))
                 counts["edges_created"] += 1
             except sqlite3.IntegrityError:
                 # Edge already exists (unique constraint) — skip
                 log.debug("edge already exists: %s → %s (%s)", e.source_id, e.target_id, e.type)
+
+        # Refresh roles on ALL edges (covers pre-existing edges with stale roles)
+        for row in db.execute("SELECT id, source_id, target_id FROM edges"):
+            edge_roles = _compute_edge_roles(db, row["source_id"], row["target_id"])
+            db.execute("UPDATE edges SET roles = ? WHERE id = ?",
+                       (json.dumps(edge_roles), row["id"]))
 
         # Settings
         for key, value in diff.settings_to_update.items():
@@ -585,6 +784,12 @@ def main():
     # Parse vault
     log.info("📖 Parsing vault: %s", vault_path)
     t0 = time.monotonic()
+
+    # Inject/update parent links in vault files first
+    n_parent = inject_parent_links(vault_path)
+    if n_parent:
+        log.info("   🔗 Updated parent links in %d files", n_parent)
+
     vault_nodes, vault_edges, vault_settings = parse_vault(vault_path)
     log.info("   %d nodes, %d edges, %d settings parsed",
              len(vault_nodes), len(vault_edges), len(vault_settings))
@@ -605,7 +810,7 @@ def main():
             title TEXT NOT NULL,
             body TEXT,
             metadata TEXT DEFAULT '{}',
-            roles TEXT DEFAULT '["public"]',
+            roles TEXT DEFAULT '["personal"]',
             created_at TEXT,
             updated_at TEXT
         );

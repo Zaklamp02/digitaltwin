@@ -77,27 +77,29 @@ const CONTAINMENT_EDGES = new Set([
  *  Nodes not in this map get auto-positioned in a ring. */
 
 const POSITIONS: Record<string, [number, number]> = {
-  career:      [170, -170],
-  education:   [230,  30],
-  hobbies:     [-170, 170],
-  community:   [-230, -30],
-  personality: [-30, -200],
-  "nb-work":   [30,  170],
+  career:        [170, -170],
+  Education:     [230,  30],
+  Hobbies:       [-170, 170],
+  Community:     [-230, -30],
+  Personal:      [-30, -200],
+  Work:          [30,  170],
+  "Maerlyn B.V.": [170, 170],
 };
 
 const RADII: Record<string, number> = {
-  career: 24, education: 21, hobbies: 21,
-  community: 19, personality: 19, "nb-work": 22,
+  career: 24, Education: 21, Hobbies: 21,
+  Community: 19, Personal: 19, Work: 22, "Maerlyn B.V.": 19,
 };
 
 /** Pillar color mapping — each root node group gets a distinct color */
 export const PILLAR_COLORS: Record<string, [number, number, number]> = {
-  career:      [245, 158, 11],   // amber
-  education:   [167, 139, 250],  // purple
-  hobbies:     [52, 211, 153],   // green
-  community:   [56, 189, 248],   // sky
-  personality: [244, 114, 182],  // pink
-  "nb-work":   [250, 204, 21],   // yellow
+  career:          [245, 158, 11],   // amber
+  Education:       [167, 139, 250],  // purple
+  Hobbies:         [52, 211, 153],   // green
+  Community:       [56, 189, 248],   // sky
+  Personal:        [244, 114, 182],  // pink
+  Work:            [250, 204, 21],   // yellow
+  "Maerlyn B.V.":  [99, 102, 241],   // indigo
 };
 
 /* ── Tuning: live-adjustable parameters exposed on window ── */

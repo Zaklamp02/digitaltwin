@@ -464,7 +464,7 @@ class ContentPatchBody(BaseModel):
     chips: list[dict[str, str]] | None = None
 
 
-@router.patch("/content", dependencies=[Depends(_reject_if_vault_mode)])
+@router.patch("/content")
 async def patch_content_config(
     body: ContentPatchBody,
     request: Request,
@@ -479,11 +479,7 @@ async def patch_content_config(
         changed.append("welcome_message")
 
     if body.system_prompt is not None:
-        # Write to _system.md (source of truth) AND upsert into DB as system node
-        settings = get_settings()
-        system_path = settings.memory_path / "_system.md"
-        system_path.write_text(f"<!-- tier: system -->\n{body.system_prompt}", encoding="utf-8")
-        # Also update or create the system node in the DB
+        # DB is sole source of truth for system prompt — no vault write-back
         now = kb._now()
         with kb._lock, kb._conn:
             kb._conn.execute(

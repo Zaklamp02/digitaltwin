@@ -76,6 +76,9 @@ class Settings(BaseSettings):
 
     @property
     def memory_path(self) -> Path:
+        """Source-of-truth content directory (vault if set, otherwise memory_dir)."""
+        if self.vault_dir:
+            return Path(self.vault_dir).resolve()
         return Path(self.memory_dir).resolve()
 
     @property

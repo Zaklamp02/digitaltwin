@@ -463,6 +463,15 @@ class TelegramBot:
             context = self._retriever.context_block(chunks)
             full_system = system_text + ("\n\n" + context if context else "")
 
+            # Formatting instructions for clean output.
+            full_system += """
+
+FORMATTING RULES:
+- Use **bold** sparingly — only for key terms or single-word emphasis. Never bold entire sentences.
+- Prefer short paragraphs (2-3 sentences) for readability.
+- Use bullet lists when listing items.
+- Keep a conversational, natural tone."""
+
             # Collect streamed tokens.
             tokens: list[str] = []
             async for token, _meta in self._provider.stream(
@@ -551,7 +560,7 @@ class TelegramBot:
                             ev = json.loads(raw_line)
                         except Exception:
                             continue
-                        ts_raw = ev.get("timestamp", "")
+                        ts_raw = ev.get("ts") or ev.get("timestamp", "")
                         try:
                             ts = datetime.fromisoformat(ts_raw)
                         except Exception:

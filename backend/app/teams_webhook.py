@@ -108,6 +108,8 @@ async def teams_webhook(request: Request):
         "Keep your answer concise (a few paragraphs max). "
         "You are speaking to a work colleague of Sebastiaan. "
         "Only share information appropriate for a professional/work context."
+        "\n\nFORMATTING: Use **bold** sparingly (key terms only). "
+        "Prefer short paragraphs and bullet lists. Never bold entire sentences."
     )
 
     messages = [Message(role="user", content=user_question)]

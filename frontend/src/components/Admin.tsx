@@ -5,8 +5,6 @@
  * Tabs: Overview | Logs | Knowledge | Graph | Config | Roles & Access | Sessions | Eval
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import KnowledgeTab from "./knowledge/KnowledgeTabNotebook";
-import GraphTab from "./GraphTab";
 import TranslationsTab from "./TranslationsTab";
 
 // ── types ─────────────────────────────────────────────────────────────────────
@@ -76,7 +74,7 @@ interface Session {
   started_ago_s: number;
 }
 
-type Tab = "overview" | "logs" | "content" | "knowledge" | "graph" | "config" | "roles" | "sessions" | "eval" | "translations";
+type Tab = "overview" | "config" | "roles" | "sessions" | "translations" | "eval" | "logs";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -209,25 +207,25 @@ function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; va
 
       {/* Vault sync status */}
       {vaultMode && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold text-amber-800">Vault Sync</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Vault Sync</h3>
             <button
               onClick={triggerSync}
               disabled={syncing}
-              className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
               {syncing ? "Syncing…" : "Sync now"}
             </button>
           </div>
-          <div className="text-xs text-amber-700 space-y-1">
-            <p>Source: <code className="bg-amber-100 px-1 rounded">{syncStatus?.vault_path ?? "—"}</code></p>
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>Source: <code className="bg-gray-100 px-1 rounded text-gray-600">{syncStatus?.vault_path ?? "—"}</code></p>
             {syncStatus?.last_sync && (
               <p>Last sync: {syncStatus.last_sync.timestamp ?? "—"} — {syncStatus.last_sync.created ?? 0} created, {syncStatus.last_sync.updated ?? 0} updated, {syncStatus.last_sync.deleted ?? 0} deleted</p>
             )}
             {!syncStatus?.last_sync && <p>No sync recorded yet.</p>}
           </div>
-          {syncMsg && <p className="text-xs text-amber-900 mt-2 font-medium">{syncMsg}</p>}
+          {syncMsg && <p className={`text-xs mt-2 font-medium ${syncMsg.startsWith("Error") ? "text-red-600" : "text-emerald-600"}`}>{syncMsg}</p>}
         </div>
       )}
       {/* Primary stats */}
@@ -421,180 +419,6 @@ function LogsTab({ token }: { token: string }) {
   );
 }
 
-// ── Content tab ───────────────────────────────────────────────────────────────
-
-interface ContentConfig {
-  welcome_message: string;
-  system_prompt: string;
-  chips: { label: string; text: string }[];
-}
-
-function ContentTab({ token, readOnly }: { token: string; readOnly?: boolean }) {
-  const [cfg, setCfg] = useState<ContentConfig | null>(null);
-  const [welcome, setWelcome] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [chips, setChips] = useState<{ label: string; text: string }[]>([]);
-  const [savingSection, setSavingSection] = useState<string | null>(null);
-  const [msgs, setMsgs] = useState<Record<string, string>>({});
-
-  const load = async () => {
-    const res = await fetch("/api/admin/content", { headers: { "X-Access-Token": token } });
-    if (res.ok) {
-      const data: ContentConfig = await res.json();
-      setCfg(data);
-      setWelcome(data.welcome_message);
-      setSystemPrompt(data.system_prompt);
-      setChips(data.chips);
-    }
-  };
-
-  useEffect(() => { void load(); }, [token]);
-
-  const save = async (section: string, body: Partial<ContentConfig>) => {
-    setSavingSection(section);
-    const res = await fetch("/api/admin/content", {
-      method: "PATCH",
-      headers: { "X-Access-Token": token, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    setSavingSection(null);
-    const data = await res.json().catch(() => ({}));
-    setMsgs((m) => ({ ...m, [section]: res.ok ? "Saved ✓" : `Error: ${data.detail ?? "unknown"}` }));
-    if (res.ok) setTimeout(() => setMsgs((m) => ({ ...m, [section]: "" })), 2500);
-  };
-
-  const updateChip = (i: number, field: "label" | "text", val: string) => {
-    setChips((prev) => prev.map((c, idx) => idx === i ? { ...c, [field]: val } : c));
-  };
-  const addChip = () => setChips((prev) => [...prev, { label: "", text: "" }]);
-  const removeChip = (i: number) => setChips((prev) => prev.filter((_, idx) => idx !== i));
-  const moveChip = (i: number, dir: -1 | 1) => {
-    setChips((prev) => {
-      const next = [...prev];
-      const j = i + dir;
-      if (j < 0 || j >= next.length) return next;
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
-  };
-
-  if (!cfg) return <div className="text-gray-400 text-sm py-8 text-center">Loading…</div>;
-
-  return (
-    <div className="space-y-6 max-w-3xl">
-
-      {readOnly && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-          Content is managed by the Obsidian vault. Edit <code>.md</code> files there and trigger a sync.
-        </div>
-      )}
-
-      {/* Welcome message */}
-      <section className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">Welcome message</h3>
-        <p className="text-xs text-gray-400 mb-3">The first chat bubble the user sees when they open the chat.</p>
-        <textarea
-          rows={3}
-          value={welcome}
-          onChange={(e) => setWelcome(e.target.value)}
-          disabled={readOnly}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
-          placeholder="Hey! I'm Sebastiaan's digital twin…"
-        />
-        {/* Live preview */}
-        <div className="mt-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-700 max-w-[85%]">
-          <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">Preview</span>
-          {welcome || <span className="italic text-gray-400">Empty</span>}
-        </div>
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={() => void save("welcome", { welcome_message: welcome })}
-            disabled={savingSection === "welcome" || readOnly}
-            className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-          >
-            {savingSection === "welcome" ? "Saving…" : "Save welcome message"}
-          </button>
-          {msgs.welcome && <span className="text-sm text-emerald-600">{msgs.welcome}</span>}
-        </div>
-      </section>
-
-      {/* System prompt */}
-      <section className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">System prompt</h3>
-        <p className="text-xs text-gray-400 mb-3">The hidden instruction sent to the LLM before every conversation. Controls tone, rules, and persona.</p>
-        <textarea
-          rows={18}
-          value={systemPrompt}
-          onChange={(e) => setSystemPrompt(e.target.value)}
-          disabled={readOnly}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
-          placeholder="You are Sebastiaan's digital twin…"
-          spellCheck={false}
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={() => void save("system", { system_prompt: systemPrompt })}
-            disabled={savingSection === "system" || readOnly}
-            className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-          >
-            {savingSection === "system" ? "Saving…" : "Save system prompt"}
-          </button>
-          <button
-            onClick={() => setSystemPrompt(cfg.system_prompt)}
-            className="rounded-lg border border-gray-200 text-gray-500 px-4 py-2 text-sm hover:bg-gray-50 transition-colors"
-          >
-            Reset
-          </button>
-          {msgs.system && <span className="text-sm text-emerald-600">{msgs.system}</span>}
-        </div>
-      </section>
-
-      {/* Suggestion chips */}
-      <section className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">Suggestion chips</h3>
-        <p className="text-xs text-gray-400 mb-4">Quick-action buttons shown below the welcome message. Up to 6 chips. Label = short button text; Question = what gets sent.</p>
-        <div className="space-y-2">
-          {chips.map((chip, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <div className="flex flex-col gap-0.5">
-                <button onClick={() => moveChip(i, -1)} disabled={i === 0} className="text-gray-300 hover:text-gray-500 disabled:opacity-20 text-xs leading-none">▲</button>
-                <button onClick={() => moveChip(i, 1)} disabled={i === chips.length - 1} className="text-gray-300 hover:text-gray-500 disabled:opacity-20 text-xs leading-none">▼</button>
-              </div>
-              <input
-                value={chip.label}
-                onChange={(e) => updateChip(i, "label", e.target.value)}
-                placeholder="Label"
-                className="w-32 shrink-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              />
-              <input
-                value={chip.text}
-                onChange={(e) => updateChip(i, "text", e.target.value)}
-                placeholder="Question text sent to the AI…"
-                className="flex-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              />
-              <button onClick={() => removeChip(i)} className="text-gray-300 hover:text-red-400 text-sm px-1">✕</button>
-            </div>
-          ))}
-        </div>
-        {chips.length < 6 && (
-          <button onClick={addChip} className="mt-3 text-sm text-indigo-600 hover:text-indigo-800">+ Add chip</button>
-        )}
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            onClick={() => void save("chips", { chips })}
-            disabled={savingSection === "chips" || readOnly}
-            className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-          >
-            {savingSection === "chips" ? "Saving…" : "Save chips"}
-          </button>
-          {msgs.chips && <span className="text-sm text-emerald-600">{msgs.chips}</span>}
-        </div>
-      </section>
-
-    </div>
-  );
-}
-
 
 // ── Config tab ────────────────────────────────────────────────────────────────
 
@@ -603,6 +427,36 @@ function ConfigTab({ token }: { token: string }) {
   const [draft, setDraft] = useState<Partial<AdminConfig>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Content state (welcome message + system prompt)
+  const [welcome, setWelcome] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [origSystemPrompt, setOrigSystemPrompt] = useState("");
+  const [savingContent, setSavingContent] = useState<string | null>(null);
+  const [contentMsg, setContentMsg] = useState<Record<string, string>>({});
+
+  const loadContent = useCallback(async () => {
+    const res = await fetch("/api/admin/content", { headers: { "X-Access-Token": token } });
+    if (res.ok) {
+      const data = await res.json();
+      setWelcome(data.welcome_message ?? "");
+      setSystemPrompt(data.system_prompt ?? "");
+      setOrigSystemPrompt(data.system_prompt ?? "");
+    }
+  }, [token]);
+
+  const saveContent = async (section: string, body: Record<string, string>) => {
+    setSavingContent(section);
+    const res = await fetch("/api/admin/content", {
+      method: "PATCH",
+      headers: { "X-Access-Token": token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setSavingContent(null);
+    const data = await res.json().catch(() => ({}));
+    setContentMsg((m) => ({ ...m, [section]: res.ok ? "Saved ✓" : `Error: ${data.detail ?? "unknown"}` }));
+    if (res.ok) setTimeout(() => setContentMsg((m) => ({ ...m, [section]: "" })), 2500);
+  };
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/config", { headers: { "X-Access-Token": token } });
@@ -622,7 +476,7 @@ function ConfigTab({ token }: { token: string }) {
     }
   }, [token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadContent(); }, [load, loadContent]);
 
   const save = async () => {
     setSaving(true);
@@ -738,10 +592,61 @@ function ConfigTab({ token }: { token: string }) {
         </div>
       </section>
 
-      {/* System prompt shortcut */}
-      <section className="rounded-xl border border-gray-200 bg-indigo-50 border-indigo-200 shadow-sm p-5">
+      {/* Welcome message */}
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-1">Welcome message</h3>
+        <p className="text-xs text-gray-400 mb-3">The first chat bubble the user sees when they open the chat.</p>
+        <textarea
+          rows={3}
+          value={welcome}
+          onChange={(e) => setWelcome(e.target.value)}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="Hey! I'm Sebastiaan's digital twin…"
+        />
+        <div className="mt-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-700 max-w-[85%]">
+          <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">Preview</span>
+          {welcome || <span className="italic text-gray-400">Empty</span>}
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={() => void saveContent("welcome", { welcome_message: welcome })}
+            disabled={savingContent === "welcome"}
+            className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {savingContent === "welcome" ? "Saving…" : "Save welcome message"}
+          </button>
+          {contentMsg.welcome && <span className="text-sm text-emerald-600">{contentMsg.welcome}</span>}
+        </div>
+      </section>
+
+      {/* System prompt */}
+      <section className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
         <h3 className="text-sm font-semibold text-gray-700 mb-1">System prompt</h3>
-        <p className="text-xs text-gray-500 mb-3">Use the <strong>Content</strong> tab to edit the system prompt, welcome message, and suggestion chips — all live without restart.</p>
+        <p className="text-xs text-gray-400 mb-3">The hidden instruction sent to the LLM before every conversation. Controls tone, rules, and persona.</p>
+        <textarea
+          rows={16}
+          value={systemPrompt}
+          onChange={(e) => setSystemPrompt(e.target.value)}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="You are Sebastiaan's digital twin…"
+          spellCheck={false}
+        />
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={() => void saveContent("system", { system_prompt: systemPrompt })}
+            disabled={savingContent === "system"}
+            className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {savingContent === "system" ? "Saving…" : "Save system prompt"}
+          </button>
+          <button
+            onClick={() => setSystemPrompt(origSystemPrompt)}
+            className="rounded-lg border border-gray-200 text-gray-500 px-4 py-2 text-sm hover:bg-gray-50 transition-colors"
+          >
+            Reset
+          </button>
+          {contentMsg.system && <span className="text-sm text-emerald-600">{contentMsg.system}</span>}
+        </div>
       </section>
 
       {/* Voice & audio */}
@@ -1693,7 +1598,6 @@ function AdminLogin({ onLogin, onExit, error: initialError }: { onLogin: (t: str
 export function Admin({ token: initialToken, onExit }: AdminProps) {
   const [token, setToken] = useState(initialToken);
   const [tab, setTab] = useState<Tab>("overview");
-  const [pendingKnowledgeNode, setPendingKnowledgeNode] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [vaultMode, setVaultMode] = useState(false);
@@ -1749,15 +1653,12 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
 
   const TABS: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
-    { id: "logs", label: "Logs" },
-    { id: "content", label: "Content" },
-    { id: "knowledge", label: "Knowledge" },
-    { id: "graph", label: "Graph" },
     { id: "config", label: "Config" },
     { id: "roles", label: "Roles & Access" },
     { id: "sessions", label: "Sessions" },
     { id: "translations", label: "NL Translations" },
     { id: "eval", label: "Eval" },
+    { id: "logs", label: "Logs" },
   ];
 
   return (
@@ -1769,8 +1670,6 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
             <img src="/avatar_sebastiaan.png" alt="" className="h-full w-full object-cover" />
           </div>
           <span className="font-semibold text-gray-900 text-sm">Admin — Digital Twin</span>
-          <span className="text-xs text-gray-400 hidden sm:inline">personal tier</span>
-          {vaultMode && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full ml-2">Vault mode</span>}
         </div>
         <button onClick={onExit} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
           ← Back to chat
@@ -1794,43 +1693,19 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
         ))}
       </nav>
 
-      {/* Content — full-height for graph/knowledge/memory, max-width for others */}
-      {(tab === "knowledge" || tab === "graph") ? (
-        <div className="flex-1 overflow-hidden" style={{ height: "calc(100vh - 113px)" }}>
-          {tab === "knowledge" && (
-              <KnowledgeTab
-                token={token}
-                initialNodeId={pendingKnowledgeNode}
-                onNavigated={() => setPendingKnowledgeNode(null)}
-                readOnly={vaultMode}
-              />
-          )}
-          {tab === "graph" && (
-            <GraphTab
-              token={token}
-              onNavigateToNode={(id) => {
-                setPendingKnowledgeNode(id);
-                setTab("knowledge");
-              }}
-            />
-          )}
-        </div>
-      ) : (
-        <main className="max-w-6xl mx-auto px-6 py-6">
+      <main className="max-w-6xl mx-auto px-6 py-6">
           {tab === "overview" && (
             stats
               ? <OverviewTab stats={stats} vaultMode={vaultMode} syncStatus={syncStatus} token={token} />
               : <div className="text-gray-400 text-sm py-12 text-center">Loading stats…</div>
           )}
-          {tab === "logs" && <LogsTab token={token} />}
-          {tab === "content" && <ContentTab token={token} readOnly={vaultMode} />}
           {tab === "config" && <ConfigTab token={token} />}
           {tab === "roles" && <RolesTab token={token} />}
           {tab === "sessions" && <SessionsTab token={token} />}
           {tab === "translations" && <TranslationsTab token={token} />}
           {tab === "eval" && <EvalTab token={token} />}
+          {tab === "logs" && <LogsTab token={token} />}
         </main>
-      )}
     </div>
   );
 }

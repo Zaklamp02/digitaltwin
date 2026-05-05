@@ -69,6 +69,9 @@ const TYPE_FILL: Record<string, string> = {
   notebook:  "#eab308",
 };
 
+const CAREER_FILL = "#f59e0b";
+const COMMUNITY_FILL = "#2563eb";
+
 const ROLE_COLORS: Record<string, string> = {
   public:   "#22c55e",
   work:     "#3b82f6",
@@ -956,6 +959,26 @@ export default function GraphTab({
     containmentChildrenMap.get(parent)!.add(child);
   }
 
+  const nodeFillMap = new Map<string, string>();
+  const markThemeSubtree = (rootId: string, fill: string) => {
+    if (!simRef.current.some((n) => n.id === rootId)) return;
+    const queue = [rootId];
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (nodeFillMap.has(id)) continue;
+      nodeFillMap.set(id, fill);
+      for (const child of containmentChildrenMap.get(id) ?? []) {
+        queue.push(child);
+      }
+    }
+  };
+  markThemeSubtree("community", COMMUNITY_FILL);
+  markThemeSubtree("career", CAREER_FILL);
+  nodeFillMap.set("nb-work", CAREER_FILL);
+
+  const getNodeFill = (node: Pick<SimNode, "id" | "type">) =>
+    nodeFillMap.get(node.id) ?? TYPE_FILL[node.type] ?? "#9ca3af";
+
   // All nodes reachable from identity via containment (these are "in" the graph)
   const inGraphIds = new Set<string>(["identity"]);
   {
@@ -1220,7 +1243,7 @@ export default function GraphTab({
               const pos = displayRef.current.get(n.id);
               if (!pos) return null;
               const isSelected  = selected?.id === n.id;
-              const fill        = TYPE_FILL[n.type] ?? "#9ca3af";
+              const fill        = getNodeFill(n);
               const r           = pos.r;
               const isFocusShow = !inFocusMode || pos.opacity > 0.25;
               const abbr        = TYPE_ABBR[n.type] ?? n.type.slice(0, 2).toUpperCase();
@@ -1371,7 +1394,7 @@ export default function GraphTab({
               <div className="flex gap-1 flex-wrap mt-2">
                 <span
                   className="px-2 py-0.5 rounded-full text-white text-xs font-medium"
-                  style={{ backgroundColor: TYPE_FILL[selected.type] ?? "#9ca3af" }}
+                  style={{ backgroundColor: getNodeFill(selected) }}
                 >{selected.type}</span>
                 <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">tier {selected.tier}</span>
                 {selected.roles.map(r => (
@@ -1432,7 +1455,7 @@ export default function GraphTab({
                       >{e.other_title}</button>
                       <span
                         className="flex-shrink-0 px-1 py-0.5 rounded text-[9px] font-medium text-white"
-                        style={{ backgroundColor: TYPE_FILL[e.other_type] ?? "#9ca3af" }}
+                        style={{ backgroundColor: otherSim ? getNodeFill(otherSim) : (TYPE_FILL[e.other_type] ?? "#9ca3af") }}
                       >{e.type}</span>
                       <button
                         onClick={() => deleteEdge(e.id)}
@@ -1493,7 +1516,7 @@ export default function GraphTab({
                 >
                   <span
                     className="px-1.5 py-0.5 rounded text-white text-[10px] font-medium flex-shrink-0"
-                    style={{ backgroundColor: TYPE_FILL[n.type] ?? "#9ca3af" }}
+                    style={{ backgroundColor: getNodeFill(n) }}
                   >{n.type}</span>
                   <span className="text-xs text-gray-700 truncate flex-1">{n.title}</span>
                 </button>

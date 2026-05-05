@@ -22,8 +22,9 @@ from .config import Tier
 # unlimited represented by -1
 TIER_LIMITS: dict[Tier, tuple[int, int]] = {
     # (conversations/day/IP, turns/conversation)
-    "public": (3, 15),
-    "recruiter": (10, 25),
+    "public": (3, 10),
+    "work": (10, 25),
+    "friends": (10, 25),
     "personal": (-1, -1),
 }
 
