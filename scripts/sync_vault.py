@@ -60,7 +60,7 @@ FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
 
 # Frontmatter keys that map to promoted node fields (not stored in metadata)
-NODE_FIELDS = {"visibility", "parent"}
+NODE_FIELDS = {"visibility", "parent", "secondary_parents"}
 # Metadata keys to promote to top-level metadata dict
 META_KEYS = {"featured", "icon", "notebook_root", "url", "date", "tags",
              "file", "original_filename", "mime_type", "extra_files", "extra_meta"}
@@ -155,6 +155,33 @@ def _title_from_stem(stem: str) -> str:
     BIG4 are not mangled by str.title().
     """
     return stem.replace("-", " ").replace("_", " ")
+
+
+def _parse_secondary_parents(value: Any) -> list[str]:
+    """Normalize secondary_parents frontmatter into a list of note titles."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, list):
+        values = value
+    else:
+        return []
+
+    parents: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if item is None:
+            continue
+        text = str(item).strip()
+        if not text:
+            continue
+        match = WIKILINK_RE.search(text)
+        target = match.group(1).strip() if match else text
+        if target not in seen:
+            parents.append(target)
+            seen.add(target)
+    return parents
 
 
 def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dict]:
@@ -290,6 +317,20 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
         if doc_paths:
             existing = metadata.get("extra_files", [])
             metadata["extra_files"] = list(dict.fromkeys(existing + doc_paths))
+
+        # Add optional secondary containment parents from frontmatter.
+        for parent_name in _parse_secondary_parents((fm or {}).get("secondary_parents")):
+            parent_id = filename_to_id.get(parent_name)
+            if not parent_id:
+                log.warning("Unresolved secondary parent: [[%s]] in %s", parent_name, rel)
+                continue
+            if parent_id == node_id:
+                continue
+            edges.append(VaultEdge(
+                source_id=parent_id,
+                target_id=node_id,
+                type="includes",
+            ))
 
     # Detect root node: the folder note at vault root (stem matches vault folder name)
     root_note = vault_path / f"{vault_path.name}.md"
