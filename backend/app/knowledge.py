@@ -654,7 +654,7 @@ _ALL_SEEDED_IDS: frozenset[str] = frozenset({
     "education--certifications", "education--training",
     "certifications--iso-cert",
     "family--family-personal",
-    "community--engagements",
+    "community--engagements", "community--publication",
     "earlier--publication", "identity--publication", "philips--publication",
     "personal--anecdotes-link", "personal--childhood-link",
     "personal--philips-years-link",
@@ -684,7 +684,6 @@ _SEED_EDGES: list[tuple[str, str, str, str, str]] = [
     # ── Work notebook → chapters ──────────────────────────────────────────────
     ("nb-work",  "career",            "includes", "Career",               "nb-work--career"),
     ("nb-work",  "community",         "includes", "Community",            "nb-work--community"),
-    ("nb-work",  "publication",       "includes", "Publications",         "nb-work--publication"),
     ("nb-work",  "stack",             "includes", "Tech Stack",           "nb-work--stack"),
     ("nb-work",  "faq",               "includes", "FAQ",                  "nb-work--faq"),
     ("nb-work",  "cv",                "includes", "CV",                   "nb-work--cv"),
@@ -736,7 +735,8 @@ _SEED_EDGES: list[tuple[str, str, str, str, str]] = [
     # ── Family hierarchy ──────────────────────────────────────────────────────
     ("family",              "family-personal",            "has",       "Private details",  "family--family-personal"),
 
-    # ── Community → Engagements ───────────────────────────────────────────────
+    # ── Public presence → publications and engagements ───────────────────────
+    ("community",           "publication",                "includes", "Publications", "community--publication"),
     ("community",           "engagements",                "includes", "Engagements",   "community--engagements"),
 
     # ── Earlier career → publication ──────────────────────────────────────────
@@ -1019,6 +1019,10 @@ Actual client names for Youwe AI practice reference projects.
             "UPDATE nodes SET type = 'personal', updated_at = ? WHERE id = 'hobbies' AND type != 'personal'",
             (now,),
         )
+        db._conn.execute(
+            "UPDATE nodes SET title = 'Community', updated_at = ? WHERE id = 'community'",
+            (now,),
+        )
         # Create new nodes
         for node_id, node_type, title, body, roles in new_nodes:
             meta = json.dumps(_notebook_meta.get(node_id, {}))
@@ -1043,6 +1047,28 @@ Actual client names for Youwe AI practice reference projects.
                 "VALUES (?,?,?,?,?,?,?)",
                 (eid, src, tgt, etype, label, json.dumps(roles), now),
             )
+        for microblog_id in ("Microblog", "microblog"):
+            exists = db._conn.execute(
+                "SELECT 1 FROM nodes WHERE id = ?",
+                (microblog_id,),
+            ).fetchone()
+            if not exists:
+                continue
+            db._conn.execute(
+                "INSERT OR IGNORE INTO edges "
+                "(id, source_id, target_id, type, label, roles, created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    f"community--{microblog_id.lower()}",
+                    "community",
+                    microblog_id,
+                    "includes",
+                    "Microblog",
+                    json.dumps(["public"]),
+                    now,
+                ),
+            )
+            break
         # Restore document metadata for nodes with known attached files
         known_docs = [
             ("cv",                 "documents/9de3bcbd.pdf",  "application/pdf", "CV_Sebastiaan_den_Boer.pdf"),

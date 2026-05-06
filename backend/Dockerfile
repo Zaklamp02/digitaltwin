@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # chromadb needs a small native toolchain; install then prune.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+    && apt-get install -y --no-install-recommends build-essential curl git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

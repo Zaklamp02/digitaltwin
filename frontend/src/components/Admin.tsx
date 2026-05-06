@@ -176,7 +176,7 @@ function TierBar({ breakdown }: { breakdown: Record<string, number> }) {
 
 // ── Overview tab ──────────────────────────────────────────────────────────────
 
-function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; vaultMode?: boolean; syncStatus?: any; token: string }) {
+function OverviewTab({ stats, syncStatus, token }: { stats: Stats; syncStatus?: any; token: string }) {
   const totalBreakdown = Object.values(stats.tier_breakdown).reduce((a, b) => a + b, 0) || 1;
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
@@ -191,7 +191,14 @@ function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; va
       });
       const data = await res.json();
       if (res.ok) {
-        setSyncMsg(data.status === "no_changes" ? "No changes detected" : `Synced: ${data.created ?? 0} created, ${data.updated ?? 0} updated, ${data.deleted ?? 0} deleted`);
+        const prefix = data.git_action === "clone"
+          ? "Vault cloned. "
+          : data.git_action === "pull"
+            ? "Vault pulled. "
+            : "";
+        setSyncMsg(data.status === "no_changes"
+          ? `${prefix}No changes detected`
+          : `${prefix}Synced: ${data.created ?? 0} created, ${data.updated ?? 0} updated, ${data.deleted ?? 0} deleted`);
       } else {
         setSyncMsg(`Error: ${data.detail ?? "unknown"}`);
       }
@@ -206,7 +213,7 @@ function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; va
     <div className="space-y-6">
 
       {/* Vault sync status */}
-      {vaultMode && (
+      {syncStatus?.sync_available && (
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-gray-700">Vault Sync</h3>
@@ -215,11 +222,14 @@ function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; va
               disabled={syncing}
               className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
-              {syncing ? "Syncing…" : "Sync now"}
+              {syncing ? "Syncing…" : (syncStatus?.action_label ?? "Sync now")}
             </button>
           </div>
           <div className="text-xs text-gray-500 space-y-1">
             <p>Source: <code className="bg-gray-100 px-1 rounded text-gray-600">{syncStatus?.vault_path ?? "—"}</code></p>
+            {syncStatus?.git_enabled && (
+              <p>Git: {syncStatus?.git_branch ?? "main"} {syncStatus?.git_ready ? "(repo ready)" : "(repo missing)"} {syncStatus?.git_remote ? `— ${syncStatus.git_remote}` : ""}</p>
+            )}
             {syncStatus?.last_sync && (
               <p>Last sync: {syncStatus.last_sync.timestamp ?? "—"} — {syncStatus.last_sync.created ?? 0} created, {syncStatus.last_sync.updated ?? 0} updated, {syncStatus.last_sync.deleted ?? 0} deleted</p>
             )}
@@ -1600,7 +1610,6 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
   const [tab, setTab] = useState<Tab>("overview");
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [vaultMode, setVaultMode] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ vault_enabled: boolean; vault_path: string | null; last_sync: any } | null>(null);
 
   useEffect(() => {
@@ -1627,7 +1636,6 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
         const res = await fetch("/api/admin/sync-status", { headers: { "X-Access-Token": token } });
         if (res.ok) {
           const data = await res.json();
-          setVaultMode(data.vault_enabled ?? false);
           setSyncStatus(data);
         }
       } catch { /* ignore */ }
@@ -1696,7 +1704,7 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
       <main className="max-w-6xl mx-auto px-6 py-6">
           {tab === "overview" && (
             stats
-              ? <OverviewTab stats={stats} vaultMode={vaultMode} syncStatus={syncStatus} token={token} />
+              ? <OverviewTab stats={stats} syncStatus={syncStatus} token={token} />
               : <div className="text-gray-400 text-sm py-12 text-center">Loading stats…</div>
           )}
           {tab === "config" && <ConfigTab token={token} />}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +27,77 @@ if _scripts_dir not in sys.path:
 
 from sync_vault import parse_vault, compute_diff, apply_diff, write_sync_log  # type: ignore[import-not-found]
 
+from .config import get_settings
+
 log = logging.getLogger("ask-my-agent.vault-sync")
+
+
+def _redact_remote(url: str) -> str:
+    if not url:
+        return ""
+    if "@" in url and "://" in url:
+        scheme, rest = url.split("://", 1)
+        if "@" in rest:
+            rest = rest.split("@", 1)[1]
+        return f"{scheme}://***@{rest}"
+    return url
+
+
+def get_vault_sync_status() -> dict:
+    settings = get_settings()
+    vault_path = settings.vault_path
+    vault_exists = vault_path is not None and vault_path.exists()
+    git_enabled = bool(settings.vault_git_sync_enabled)
+    git_ready = bool(vault_exists and (vault_path / ".git").exists()) if vault_path else False
+    sync_available = vault_exists or (git_enabled and vault_path is not None and bool(settings.vault_git_remote_url))
+    action_label = "Pull + Sync" if git_enabled else "Sync now"
+    return {
+        "vault_enabled": vault_exists,
+        "vault_path": str(vault_path) if vault_path else None,
+        "git_enabled": git_enabled,
+        "git_ready": git_ready,
+        "git_branch": settings.vault_git_branch if git_enabled else None,
+        "git_remote": _redact_remote(settings.vault_git_remote_url) if git_enabled else None,
+        "sync_available": sync_available,
+        "action_label": action_label,
+        "last_sync": get_last_sync_info(settings.knowledge_db_path),
+    }
+
+
+def prepare_vault_repo() -> dict | None:
+    settings = get_settings()
+    if not settings.vault_git_sync_enabled:
+        return None
+
+    vault_path = settings.vault_path
+    if vault_path is None:
+        raise RuntimeError("VAULT_DIR must be set when VAULT_GIT_SYNC_ENABLED=true")
+
+    remote = settings.vault_git_remote_url.strip()
+    branch = settings.vault_git_branch.strip() or "main"
+    vault_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if (vault_path / ".git").exists():
+        cmd = ["git", "-C", str(vault_path), "pull", "--ff-only", "origin", branch]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or "git pull failed").strip())
+        return {
+            "git_action": "pull",
+            "git_output": (proc.stdout or proc.stderr or "Already up to date.").strip(),
+        }
+
+    if not remote:
+        raise RuntimeError("Vault repository is missing and VAULT_GIT_REMOTE_URL is not configured")
+
+    cmd = ["git", "clone", "--branch", branch, "--single-branch", remote, str(vault_path)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout or "git clone failed").strip())
+    return {
+        "git_action": "clone",
+        "git_output": (proc.stdout or proc.stderr or "Repository cloned.").strip(),
+    }
 
 
 def sync_vault_to_db(vault_path: Path, knowledge: "KnowledgeDB",
