@@ -1,0 +1,106 @@
+# Internal (owner-only) Digital Twin runtime
+#
+# NAS deployment:
+#   /volume1/docker/digital_twin_internal/
+#
+# Env setup:
+#   APP_MODE=internal                  (admin routes enabled)
+#   CHROMA_DIR=/app/chroma_db_internal (full vector index)
+#   KNOWLEDGE_DB=/app/data_internal/knowledge.db
+#
+# Access:
+#   ├─ LAN (owner): http://nas.local:8081      (rate-limited, token auth)
+#   ├─ Auth: header X-Access-Token (token from credentials.yaml)
+#   └─ Backend: http://backend:8000             (docker network, internal only)
+#
+# Data:
+#   ├─ Input:  Synced from vault via vault_sync.py
+#   └─ Full:   /volume1/docker/digital_twin_internal/data_internal/
+#              /volume1/docker/digital_twin_internal/chroma_db_internal/
+#              (regenerated daily via indexer)
+#
+# Publishing:
+#   To update public dataset, run on NAS:
+#     docker compose -f docker-compose.internal.yml exec backend-internal \
+#       python scripts/publish_public_projection.py \
+#         --internal-db /app/data_internal/knowledge.db \
+#         --public-db /volume1/docker/digital_twin_public/data_public/knowledge.db \
+#         --internal-chroma /app/chroma_db_internal \
+#         --public-chroma /volume1/docker/digital_twin_public/chroma_db_public/
+
+version: '3.8'
+
+services:
+  backend-internal:
+    build:
+      context: ../shared-code
+      dockerfile: backend/Dockerfile
+    container_name: digital-twin-backend-internal
+    env_file: .env
+    environment:
+      APP_MODE: "internal"
+      CHROMA_DIR: /app/chroma_db_internal
+      REINDEX_ON_STARTUP: "false"
+      PUBLIC_PROJECTION_REINDEX_ON_SYNC: "false"
+      CREDENTIALS_FILE: /app/credentials.yaml
+      LOG_FILE: /app/logs_internal/requests.ndjson
+      ADMIN_PUBLIC_LOG_FILE: /app/public_logs/requests.ndjson
+      KNOWLEDGE_DB: /app/data_internal/knowledge.db
+      VAULT_DIR: /app/vault
+      VAULT_GIT_SYNC_ENABLED: "true"
+      VAULT_GIT_PULL_ON_STARTUP: "true"
+      VAULT_GIT_POLL_ENABLED: "true"
+      VAULT_GIT_POLL_INTERVAL_SECONDS: "300"
+      # CORS for the internal frontend only.
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:4173,http://frontend-internal:80,https://internal.sebastiaandenboer.org"
+    volumes:
+      - ./vault:/app/vault:rw
+      - ./.ssh/notes_vault_deploy:/root/.ssh/notes_vault_deploy:ro
+      - ./.ssh/known_hosts:/root/.ssh/known_hosts:ro
+      - ./chroma_db_internal:/app/chroma_db_internal
+      - ./credentials.yaml:/app/credentials.yaml:ro
+      - ./logs_internal:/app/logs_internal
+      - ../digital_twin_public/logs:/app/public_logs:ro
+      - ./data_internal:/app/data_internal
+      - ./frontend/public:/app/public:ro
+      # Cross-mount to publish-projection (write to public DB)
+      - ../digital_twin_public/data_public:/app/data_public_publish:rw
+      - ../digital_twin_public/chroma_db_public:/app/chroma_db_public_publish:rw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      digital-twin-internal-net:
+        aliases:
+          - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend-internal:
+    build:
+      context: ../shared-code/frontend
+    container_name: digital-twin-frontend-internal
+    depends_on:
+      backend-internal:
+        condition: service_healthy
+    environment:
+      # Point frontend to this backend container
+      VITE_BACKEND_URL: "http://backend-internal:8000"
+    ports:
+      - "8081:80"        # LAN-only (no external port exposed; auth handled by token header)
+    restart: unless-stopped
+    networks:
+      - digital-twin-internal-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  digital-twin-internal-net:
+    driver: bridge
+    name: digital-twin-internal-net

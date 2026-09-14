@@ -538,50 +538,69 @@ FORMATTING RULES:
         if not self._owner_id:
             return
         try:
-            from collections import Counter, defaultdict
+            from collections import defaultdict
             import json
+            from .config import get_settings
 
             lines: list[str] = []
-            total = today_cnt = 0
             tier_counts: dict[str, int] = defaultdict(int)
 
-            if self._log_path.exists():
-                now = datetime.now(tz=_AMS)
-                today_str = now.strftime("%Y-%m-%d")
-                yesterday_str = (now.replace(hour=0, minute=0, second=0, microsecond=0)
-                                 .__class__.fromtimestamp(
-                                     now.timestamp() - 86400, tz=_AMS
-                                 ).strftime("%Y-%m-%d"))
+            now = datetime.now(tz=_AMS)
+            yesterday_str = now.date().fromordinal(now.date().toordinal() - 1).strftime("%Y-%m-%d")
 
-                sessions_yesterday: set[str] = set()
-                with self._log_path.open() as fh:
+            settings = get_settings()
+            log_paths = [self._log_path]
+            public_log = settings.admin_public_log_path
+            if public_log is not None and public_log != self._log_path:
+                log_paths.append(public_log)
+
+            sessions_yesterday: set[str] = set()
+            for path in log_paths:
+                if not path.exists():
+                    continue
+                with path.open(encoding="utf-8") as fh:
                     for raw_line in fh:
                         try:
                             ev = json.loads(raw_line)
                         except Exception:
                             continue
+
+                        if ev.get("event") != "chat":
+                            continue
+
+                        channel = str(ev.get("channel") or "")
+                        if channel.startswith("telegram"):
+                            # Daily digest is about website conversations.
+                            continue
+
+                        sid = str(ev.get("session_id") or "")
+                        if not sid:
+                            continue
+
                         ts_raw = ev.get("ts") or ev.get("timestamp", "")
                         try:
-                            ts = datetime.fromisoformat(ts_raw)
+                            ts = datetime.fromisoformat(str(ts_raw))
                         except Exception:
                             continue
-                        day = ts.astimezone(_AMS).strftime("%Y-%m-%d")
-                        if day == yesterday_str:
-                            sid = ev.get("session_id", "?")
-                            sessions_yesterday.add(sid)
-                            tier_counts[ev.get("tier", "public")] += 1
 
-                yesterday_cnt = len(sessions_yesterday)
-                tier_summary = " | ".join(
-                    f"{t}: {c}" for t, c in sorted(tier_counts.items())
-                ) or "none"
-                lines = [
-                    f"☀️ *Daily digest* — {yesterday_str}",
-                    f"Conversations yesterday: *{yesterday_cnt}*",
-                    f"Tier breakdown: {tier_summary}",
-                ]
-            else:
-                lines = ["☀️ *Daily digest* — no log file found."]
+                        day = ts.astimezone(_AMS).strftime("%Y-%m-%d")
+                        if day != yesterday_str:
+                            continue
+
+                        if sid in sessions_yesterday:
+                            continue
+
+                        sessions_yesterday.add(sid)
+                        tier_counts[str(ev.get("tier") or "public")] += 1
+
+            tier_summary = " | ".join(
+                f"{t}: {c}" for t, c in sorted(tier_counts.items())
+            ) or "none"
+            lines = [
+                f"☀️ *Daily digest* — {yesterday_str}",
+                f"Website conversations yesterday: *{len(sessions_yesterday)}*",
+                f"Tier breakdown: {tier_summary}",
+            ]
 
             await ctx.bot.send_message(
                 chat_id=self._owner_id,

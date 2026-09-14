@@ -1,11 +1,14 @@
 /**
  * Admin dashboard — personal-tier only.
- * Accessed via: http://localhost:5173/?page=admin&t=<personal-token>
+ * Accessed via: http://localhost:5173/?page=admin or a one-time link like http://localhost:5173/#t=<personal-token>
+const SESSION_TOKEN_KEY = "accessToken";
  *
  * Tabs: Overview | Logs | Knowledge | Graph | Config | Roles & Access | Sessions | Eval
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import TranslationsTab from "./TranslationsTab";
+
+const SESSION_TOKEN_KEY = "accessToken";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +43,19 @@ interface LogEntry {
   output_tokens?: number;
   chunks?: { file: string; section: string; score: number; tier: string }[];
   [key: string]: unknown;
+}
+
+interface ConversationSummary {
+  session_id: string;
+  tier?: string;
+  started_ts?: string;
+  last_ts?: string;
+  total_turns: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  avg_latency_ms: number;
+  last_user_message?: string;
+  last_response_preview?: string;
 }
 
 interface AdminConfig {
@@ -191,7 +207,13 @@ function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; va
       });
       const data = await res.json();
       if (res.ok) {
-        setSyncMsg(data.status === "no_changes" ? "No changes detected" : `Synced: ${data.created ?? 0} created, ${data.updated ?? 0} updated, ${data.deleted ?? 0} deleted`);
+        const base = data.status === "no_changes"
+          ? "No changes detected"
+          : `Synced: ${data.created ?? 0} created, ${data.updated ?? 0} updated, ${data.deleted ?? 0} deleted`;
+        const git = data.git
+          ? ` (git pull: ${data.git.changed ? "updated" : "already up to date"})`
+          : "";
+        setSyncMsg(`${base}${git}`);
       } else {
         setSyncMsg(`Error: ${data.detail ?? "unknown"}`);
       }
@@ -215,11 +237,17 @@ function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; va
               disabled={syncing}
               className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
-              {syncing ? "Syncing…" : "Sync now"}
+              {syncing ? "Syncing…" : (syncStatus?.action_label ?? "Sync now")}
             </button>
           </div>
           <div className="text-xs text-gray-500 space-y-1">
             <p>Source: <code className="bg-gray-100 px-1 rounded text-gray-600">{syncStatus?.vault_path ?? "—"}</code></p>
+            {syncStatus?.git_enabled && (
+              <p>
+                Git: {syncStatus?.git_ready ? "ready" : "not ready"}
+                {syncStatus?.git_branch ? ` (branch: ${syncStatus.git_branch})` : ""}
+              </p>
+            )}
             {syncStatus?.last_sync && (
               <p>Last sync: {syncStatus.last_sync.timestamp ?? "—"} — {syncStatus.last_sync.created ?? 0} created, {syncStatus.last_sync.updated ?? 0} updated, {syncStatus.last_sync.deleted ?? 0} deleted</p>
             )}
@@ -320,13 +348,16 @@ function OverviewTab({ stats, vaultMode, syncStatus, token }: { stats: Stats; va
 // ── Logs tab ──────────────────────────────────────────────────────────────────
 
 function LogsTab({ token }: { token: string }) {
-  const [logs, setLogs] = useState<{ total: number; entries: LogEntry[] } | null>(null);
+  const [logs, setLogs] = useState<{ total: number; entries: ConversationSummary[] } | null>(null);
   const [offset, setOffset] = useState(0);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const limit = 30;
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [fullConversation, setFullConversation] = useState<{ metadata?: { tier?: string }; turns: LogEntry[]; total_turns: number } | null>(null);
+  const [loadingConversation, setLoadingConversation] = useState(false);
 
   const load = useCallback(async (off: number) => {
-    const res = await fetch(`/api/admin/logs?limit=${limit}&offset=${off}`, {
+    const res = await fetch(`/api/admin/conversations?limit=${limit}&offset=${off}`, {
       headers: { "X-Access-Token": token },
     });
     if (res.ok) setLogs(await res.json());
@@ -336,18 +367,107 @@ function LogsTab({ token }: { token: string }) {
 
   if (!logs) return <div className="text-gray-400 text-sm py-8 text-center">Loading…</div>;
 
-  const toggleExpand = (i: number) => {
+  const toggleExpand = (sessionId: string) => {
     setExpanded((prev) => {
       const n = new Set(prev);
-      n.has(i) ? n.delete(i) : n.add(i);
+      n.has(sessionId) ? n.delete(sessionId) : n.add(sessionId);
       return n;
     });
   };
 
+  const loadFullConversation = async (sessionId: string) => {
+    setLoadingConversation(true);
+    try {
+      const res = await fetch(`/api/admin/conversation/${sessionId}`, {
+        headers: { "X-Access-Token": token },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedConversation(sessionId);
+        setFullConversation(data);
+      }
+    } finally {
+      setLoadingConversation(false);
+    }
+  };
+
+  if (selectedConversation && fullConversation) {
+    const turns = fullConversation.turns ?? [];
+    const avgLatency = turns.length > 0
+      ? Math.round(turns.reduce((sum, t) => sum + Number(t.latency_ms ?? 0), 0) / turns.length)
+      : null;
+
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => {
+            setSelectedConversation(null);
+            setFullConversation(null);
+          }}
+          className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 shadow-sm"
+        >
+          ← Back to logs
+        </button>
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
+          <h3 className="font-semibold text-gray-900">Conversation: {selectedConversation}</h3>
+          <div className="text-sm text-gray-600 space-y-1">
+            <p>Tier: <span className="font-mono font-semibold">{fullConversation.metadata?.tier || "?"}</span></p>
+            <p>Turns: <span className="font-mono font-semibold">{fullConversation.total_turns}</span></p>
+            <p>Latency avg: <span className="font-mono font-semibold">{avgLatency != null ? `${avgLatency} ms` : "?"}</span></p>
+          </div>
+
+          <div className="space-y-3 max-h-96 overflow-y-auto border-t pt-3">
+            {turns.map((turn, i) => (
+              <div key={i} className="border-l-2 border-indigo-200 pl-3 py-2 bg-indigo-50 rounded text-sm">
+                <div className="font-semibold text-indigo-900">Turn {turn.turn}</div>
+                {typeof turn.user_message === "string" && turn.user_message.length > 0 && (
+                  <div className="mt-1 text-indigo-800">
+                    <strong>Q:</strong> {turn.user_message}
+                  </div>
+                )}
+                {(!turn.user_message || String(turn.user_message).length === 0) && (
+                  <div className="mt-1 text-indigo-600 italic">
+                    <strong>Q:</strong> unavailable in older logs
+                  </div>
+                )}
+                <div className="mt-1 text-indigo-700">
+                  <strong>A:</strong> {typeof turn.response_preview === "string" ? turn.response_preview : ""}
+                  {Number(turn.response_chars ?? 0) > 200 && "…"}
+                </div>
+                <div className="mt-2 text-xs text-indigo-600 space-y-1">
+                  <p>Latency: {turn.latency_ms ?? "?"}ms | Tokens: {turn.input_tokens ?? 0}/{turn.output_tokens ?? 0}</p>
+                  {Array.isArray(turn.chunks) && turn.chunks.length > 0 && (
+                    <details className="cursor-pointer">
+                      <summary>Chunks ({turn.chunks.length})</summary>
+                      <div className="mt-1 space-y-1 text-indigo-500">
+                        {turn.chunks.map((c, ci) => (
+                          <div key={ci} className="text-xs ml-2">
+                            <span className="font-mono">{c.file}</span>: {c.section} (score: {c.score})
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <details className="border-t pt-3">
+            <summary className="cursor-pointer font-semibold text-gray-700">Raw JSON</summary>
+            <pre className="text-xs text-gray-600 overflow-x-auto whitespace-pre-wrap break-all font-mono bg-white rounded border border-gray-200 p-3 mt-2">
+              {JSON.stringify(fullConversation, null, 2)}
+            </pre>
+          </details>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-500">{fmtNum(logs.total)} total entries</span>
+        <span className="text-sm text-gray-500">{fmtNum(logs.total)} total conversations</span>
         <div className="flex gap-2">
           <button
             disabled={offset === 0}
@@ -370,47 +490,67 @@ function LogsTab({ token }: { token: string }) {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr className="text-left text-xs text-gray-400 uppercase tracking-wider">
-              <th className="px-4 py-2.5">Timestamp</th>
-              <th className="px-4 py-2.5">Event</th>
+              <th className="px-4 py-2.5">Last activity</th>
+              <th className="px-4 py-2.5">Session</th>
               <th className="px-4 py-2.5">Tier</th>
-              <th className="px-4 py-2.5">Turn</th>
-              <th className="px-4 py-2.5">Latency</th>
+              <th className="px-4 py-2.5">Turns</th>
+              <th className="px-4 py-2.5">Avg latency</th>
               <th className="px-4 py-2.5">Tokens in / out</th>
+              <th className="px-4 py-2.5">Action</th>
               <th className="px-4 py-2.5 w-8" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {logs.entries.map((e, i) => (
-              <>
-                <tr
-                  key={i}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => toggleExpand(i)}
-                >
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">{fmtTs(e.ts)}</td>
+              <Fragment key={`row-${i}`}>
+                <tr className="hover:bg-gray-50">
+                  <td
+                    className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap cursor-pointer"
+                    onClick={() => toggleExpand(e.session_id)}
+                  >
+                    {fmtTs(e.last_ts ?? "")}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-600 cursor-pointer" onClick={() => toggleExpand(e.session_id)}>
+                    {e.session_id}
+                  </td>
+                  <td className="px-4 py-2.5 cursor-pointer" onClick={() => toggleExpand(e.session_id)}>{e.tier ? <TierBadge tier={e.tier} /> : "—"}</td>
+                  <td className="px-4 py-2.5 text-gray-700 cursor-pointer" onClick={() => toggleExpand(e.session_id)}>{e.total_turns ?? 0}</td>
+                  <td className="px-4 py-2.5 text-gray-700 cursor-pointer" onClick={() => toggleExpand(e.session_id)}>{e.avg_latency_ms ? `${e.avg_latency_ms} ms` : "—"}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-600 cursor-pointer" onClick={() => toggleExpand(e.session_id)}>
+                    {`${e.total_input_tokens ?? 0} / ${e.total_output_tokens ?? 0}`}
+                  </td>
                   <td className="px-4 py-2.5">
-                    <span className={`font-mono text-xs px-1.5 py-0.5 rounded ${e.event === "chat" ? "bg-indigo-50 text-indigo-700" : "bg-red-50 text-red-700"}`}>
-                      {e.event}
-                    </span>
+                    <button
+                      onClick={() => loadFullConversation(e.session_id)}
+                      disabled={loadingConversation}
+                      className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      Open conversation
+                    </button>
                   </td>
-                  <td className="px-4 py-2.5">{e.tier ? <TierBadge tier={e.tier} /> : "—"}</td>
-                  <td className="px-4 py-2.5 text-gray-700">{e.turn ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-gray-700">{e.latency_ms != null ? `${e.latency_ms} ms` : "—"}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-600">
-                    {e.input_tokens != null ? `${e.input_tokens} / ${e.output_tokens ?? 0}` : "—"}
+                  <td
+                    className="px-4 py-2.5 text-gray-400 text-xs cursor-pointer"
+                    onClick={() => toggleExpand(e.session_id)}
+                  >
+                    {expanded.has(e.session_id) ? "▲" : "▼"}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-400 text-xs">{expanded.has(i) ? "▲" : "▼"}</td>
                 </tr>
-                {expanded.has(i) && (
-                  <tr key={`exp-${i}`}>
-                    <td colSpan={7} className="px-4 py-3 bg-gray-50">
-                      <pre className="text-xs text-gray-600 overflow-x-auto whitespace-pre-wrap break-all font-mono bg-white rounded border border-gray-200 p-3">
-                        {JSON.stringify(e, null, 2)}
-                      </pre>
+                {expanded.has(e.session_id) ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-3 bg-gray-50">
+                      <div className="text-xs text-gray-700 space-y-2">
+                        <p><strong>Started:</strong> {fmtTs(e.started_ts ?? "")}</p>
+                        {e.last_user_message ? (
+                          <p><strong>Last user message:</strong> {e.last_user_message}</p>
+                        ) : null}
+                        {e.last_response_preview ? (
+                          <p><strong>Last assistant preview:</strong> {e.last_response_preview}</p>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
-                )}
-              </>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -418,11 +558,14 @@ function LogsTab({ token }: { token: string }) {
     </div>
   );
 }
-
-
 // ── Config tab ────────────────────────────────────────────────────────────────
 
 function ConfigTab({ token }: { token: string }) {
+  const fieldClass = "w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+  const readOnlyFieldClass = "w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500";
+  const textareaClass = "w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm leading-relaxed text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+  const promptTextareaClass = "w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs font-mono leading-relaxed text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+
   const [cfg, setCfg] = useState<AdminConfig | null>(null);
   const [draft, setDraft] = useState<Partial<AdminConfig>>({});
   const [saving, setSaving] = useState(false);
@@ -514,7 +657,7 @@ function ConfigTab({ token }: { token: string }) {
                 const firstModel = (cfg.allowed_models[p] ?? [])[0] ?? "";
                 setDraft({ ...draft, llm_provider: p, model_name: firstModel });
               }}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              className={fieldClass}
             >
               {["anthropic", "openai", "ollama"].map((p) => (
                 <option key={p} value={p}>{p}</option>
@@ -527,7 +670,7 @@ function ConfigTab({ token }: { token: string }) {
             <select
               value={draft.model_name ?? cfg.model_name}
               onChange={(e) => setDraft({ ...draft, model_name: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              className={fieldClass}
             >
               {((cfg.allowed_models[draft.llm_provider ?? cfg.llm_provider]) ?? []).map((m) => (
                 <option key={m} value={m}>{m}</option>
@@ -544,11 +687,11 @@ function ConfigTab({ token }: { token: string }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Provider</label>
-            <input disabled value={cfg.embedding_provider} className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+            <input disabled value={cfg.embedding_provider} className={readOnlyFieldClass} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Model</label>
-            <input disabled value={cfg.embedding_model} className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+            <input disabled value={cfg.embedding_model} className={readOnlyFieldClass} />
           </div>
         </div>
       </section>
@@ -582,11 +725,11 @@ function ConfigTab({ token }: { token: string }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Context turns (read-only)</label>
-              <input disabled value={cfg.rag_context_turns} className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+              <input disabled value={cfg.rag_context_turns} className={readOnlyFieldClass} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Chunk tokens (read-only)</label>
-              <input disabled value={cfg.chunk_tokens} className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+              <input disabled value={cfg.chunk_tokens} className={readOnlyFieldClass} />
             </div>
           </div>
         </div>
@@ -600,7 +743,7 @@ function ConfigTab({ token }: { token: string }) {
           rows={3}
           value={welcome}
           onChange={(e) => setWelcome(e.target.value)}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className={textareaClass}
           placeholder="Hey! I'm Sebastiaan's digital twin…"
         />
         <div className="mt-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-700 max-w-[85%]">
@@ -627,7 +770,7 @@ function ConfigTab({ token }: { token: string }) {
           rows={16}
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className={promptTextareaClass}
           placeholder="You are Sebastiaan's digital twin…"
           spellCheck={false}
         />
@@ -666,7 +809,7 @@ function ConfigTab({ token }: { token: string }) {
                 const nextVoice = availableVoices.includes(currentVoice) ? currentVoice : availableVoices[0];
                 setDraft({ ...draft, tts_model: model, tts_voice: nextVoice });
               }}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              className={fieldClass}
             >
               {cfg.tts_models.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
@@ -680,7 +823,7 @@ function ConfigTab({ token }: { token: string }) {
             <select
               value={draft.tts_voice ?? cfg.tts_voice}
               onChange={(e) => setDraft({ ...draft, tts_voice: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              className={fieldClass}
             >
               {((draft.tts_model ?? cfg.tts_model) === "gpt-4o-mini-tts" ? cfg.tts_voices_all : cfg.tts_voices_basic).map(
                 (v) => <option key={v} value={v}>{v}</option>,
@@ -696,7 +839,7 @@ function ConfigTab({ token }: { token: string }) {
             <select
               value={draft.stt_model ?? cfg.stt_model}
               onChange={(e) => setDraft({ ...draft, stt_model: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              className={fieldClass}
             >
               {cfg.stt_models.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
@@ -1339,7 +1482,7 @@ function RolesTab({ token }: { token: string }) {
   };
 
   const copyUrl = (tok: string) => {
-    const url = `${window.location.origin}/?t=${tok}`;
+    const url = `${window.location.origin}/#t=${tok}`;
     navigator.clipboard.writeText(url);
     setMsg(`Copied URL for token "${tok}"`);
     setTimeout(() => setMsg(null), 3000);
@@ -1637,7 +1780,8 @@ export function Admin({ token: initialToken, onExit }: AdminProps) {
   const handleLogin = (t: string) => {
     setToken(t);
     setStatsError(null);
-    window.history.replaceState({}, "", `?page=admin&t=${t}`);
+    sessionStorage.setItem(SESSION_TOKEN_KEY, t);
+    window.history.replaceState({}, "", "?page=admin");
   };
 
   // Show login form if no token or if auth failed

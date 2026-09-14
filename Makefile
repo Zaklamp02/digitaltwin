@@ -55,29 +55,80 @@ down:
 logs:
 	docker compose logs -f backend
 
-# ── NAS deployment ────────────────────────────────────────────────────────────
+# ── NAS deployment (dual-runtime) ────────────────────────────────────────────
 
-NAS_HOST  = storybrew@192.168.68.200
-NAS_PATH  = /volume1/docker/digital_twin
+NAS_HOST  = Storybrew@192.168.68.200
+NAS_SHARED = /volume1/docker/shared-code
+NAS_PUBLIC = /volume1/docker/digital_twin_public
+NAS_INTERNAL = /volume1/docker/digital_twin_internal
 
-deploy:
-	tar --no-xattrs \
-	    --exclude='.git' \
-	    --exclude='backend/__pycache__' \
-	    --exclude='backend/.venv' \
-	    --exclude='frontend/node_modules' \
-	    --exclude='chroma_db' \
-	    --exclude='data' \
-	    --exclude='logs' \
-	    --exclude='memory' \
+# Deploy code to NAS (shared codebase for both stacks)
+deploy-code:
+	@echo "Syncing shared code to NAS (public & internal stacks use same codebase)..."
+	rsync -av --exclude='.git' \
+	    --exclude='node_modules' \
+	    --exclude='__pycache__' \
+	    --exclude='.venv' \
+	    --exclude='backend/.pytest_cache' \
+	    --exclude='data*' \
+	    --exclude='chroma_db*' \
+	    --exclude='logs*' \
+	    --exclude='vault' \
 	    --exclude='.env' \
 	    --exclude='credentials.yaml' \
-	    -czf /tmp/digital-twin-deploy.tar.gz .
-	scp -O /tmp/digital-twin-deploy.tar.gz $(NAS_HOST):$(NAS_PATH)/
-	ssh -t $(NAS_HOST) "cd $(NAS_PATH) && tar -xzf digital-twin-deploy.tar.gz && rm digital-twin-deploy.tar.gz && sudo docker-compose up --build -d"
+	    . $(NAS_HOST):$(NAS_SHARED)/
+	@echo "✓ Code deployed to NAS shared directory"
 
+# Build and start both public and internal stacks
+deploy-stacks: deploy-code
+	@echo "Building and starting public stack..."
+	ssh -t $(NAS_HOST) "cd $(NAS_PUBLIC) && sudo docker-compose up -d --build"
+	@echo "Building and starting internal stack..."
+	ssh -t $(NAS_HOST) "cd $(NAS_INTERNAL) && sudo docker-compose up -d --build"
+	@echo "✓ Both stacks are running"
+
+# Restart both stacks (without rebuild)
 restart:
-	ssh -t $(NAS_HOST) "cd $(NAS_PATH) && sudo docker-compose restart"
+	@echo "Restarting public stack..."
+	ssh -t $(NAS_HOST) "cd $(NAS_PUBLIC) && sudo docker-compose restart"
+	@echo "Restarting internal stack..."
+	ssh -t $(NAS_HOST) "cd $(NAS_INTERNAL) && sudo docker-compose restart"
+	@echo "✓ Both stacks restarted"
 
-nas-logs:
-	ssh -t $(NAS_HOST) "cd $(NAS_PATH) && sudo docker-compose logs --tail=50 -f"
+# View logs for public stack
+logs-public:
+	ssh -t $(NAS_HOST) "cd $(NAS_PUBLIC) && sudo docker-compose logs -f --tail=50"
+
+# View logs for internal stack
+logs-internal:
+	ssh -t $(NAS_HOST) "cd $(NAS_INTERNAL) && sudo docker-compose logs -f --tail=50"
+
+# View logs for both stacks (public first, then internal)
+nas-logs: logs-public
+
+# Publish public projection (sync public-role data from internal to public)
+publish-projection:
+	@echo "Publishing public projection..."
+	ssh $(NAS_HOST) "cd $(NAS_INTERNAL) && sudo docker-compose exec -T backend-internal python scripts/publish_public_projection.py \
+	  --internal-db /app/data_internal/knowledge.db \
+	  --public-db $(NAS_PUBLIC)/data_public/knowledge.db \
+	  --internal-chroma /app/chroma_db_internal \
+	  --public-chroma $(NAS_PUBLIC)/chroma_db_public"
+	@echo "Restarting public backend to pick up new data..."
+	ssh $(NAS_HOST) "cd $(NAS_PUBLIC) && sudo docker-compose restart backend-public"
+	@echo "✓ Public projection published and public backend restarted"
+
+# Status of both stacks
+status:
+	@echo "=== Public Stack Status ===" && \
+	ssh $(NAS_HOST) "cd $(NAS_PUBLIC) && sudo docker-compose ps" && \
+	echo "\n=== Internal Stack Status ===" && \
+	ssh $(NAS_HOST) "cd $(NAS_INTERNAL) && sudo docker-compose ps"
+
+# Stop both stacks
+stop:
+	@echo "Stopping public stack..."
+	ssh $(NAS_HOST) "cd $(NAS_PUBLIC) && sudo docker-compose down"
+	@echo "Stopping internal stack..."
+	ssh $(NAS_HOST) "cd $(NAS_INTERNAL) && sudo docker-compose down"
+	@echo "✓ Both stacks stopped"

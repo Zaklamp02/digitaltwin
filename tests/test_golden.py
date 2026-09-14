@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -27,16 +28,18 @@ import httpx
 import pytest
 import yaml
 
+_THIS_DIR = Path(__file__).resolve().parent
+if str(_THIS_DIR) not in sys.path:
+    sys.path.insert(0, str(_THIS_DIR))
+
+from _live_tokens import load_live_tokens, require_token_for_tier
+
 # ── config ────────────────────────────────────────────────────────────────────
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:5173").rstrip("/")
 
-# Tokens — defaults match the dev credentials.yaml; override via env vars.
-TOKENS: dict[str, str | None] = {
-    "public": os.environ.get("TOKEN_PUBLIC", None),
-    "recruiter": os.environ.get("TOKEN_RECRUITER", "rec-jOuPXS64JEw"),
-    "personal": os.environ.get("TOKEN_PERSONAL", "pers-HW3xmo0IsWE"),
-}
+# Tokens come from env vars first, then the ignored local credentials.yaml.
+TOKENS = load_live_tokens()
 
 GOLDEN_FILE = Path(__file__).parent / "golden_qa.yaml"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
@@ -69,7 +72,7 @@ def _call_chat(
             "error": str | None,
         }
     """
-    token = TOKENS.get(tier)
+    token = require_token_for_tier(TOKENS, tier)
     headers: dict[str, str] = {"X-Session-Id": str(uuid.uuid4())}
     if token:
         headers["X-Access-Token"] = token

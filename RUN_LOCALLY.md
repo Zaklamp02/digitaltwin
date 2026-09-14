@@ -15,8 +15,8 @@ docker compose up --build
 When you see both containers healthy, open:
 
 - **Public**: http://localhost:5173
-- **Recruiter**: http://localhost:5173/?t=rec-jOuPXS64JEw
-- **Personal**: http://localhost:5173/?t=pers-HW3xmo0IsWE
+- **Recruiter**: `http://localhost:5173/#t=<recruiter token from tokens.txt>`
+- **Personal**: `http://localhost:5173/#t=<personal token from tokens.txt>`
 
 Ctrl-C to stop; `docker compose down` to clean up.
 
@@ -72,3 +72,9 @@ Open: http://localhost:5173 (Vite proxies `/api` to `:8000`).
 1. Edit `credentials.yaml` — replace the two `rec-…` / `pers-…` strings.
 2. Update `tokens.txt` so you don't forget which is which.
 3. No restart needed; the app re-reads credentials per request.
+
+## Public vs internal runtime
+
+- Internal/admin runtime: default `APP_MODE=internal`
+- Public runtime: set `APP_MODE=public` and point `KNOWLEDGE_DB` / `CHROMA_DIR` to the published public projection
+- Publish the public projection with `python scripts/publish_public_projection.py --target-db data-public/knowledge.db --target-chroma chroma-public`

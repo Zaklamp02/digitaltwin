@@ -13,6 +13,11 @@
 
 The digital twin ("Ask My Agent") is feature-complete locally and ready for its first public deployment. It needs to run continuously on the home NAS, be reachable globally under `sebastiaandenboer.org` via Cloudflare Tunnel, and be secure enough to expose publicly (recruiter/visitor tier) while keeping owner features locked down.
 
+Current deployment direction:
+- Maintain one internal dataset synced from the full private vault repo on the NAS.
+- Publish a separate public projection (`knowledge.db` + Chroma) for the internet-facing runtime.
+- Run the public service with `APP_MODE=public` so admin routes are not mounted at all.
+
 A secondary but important goal is making the **Knowledge Notebook** usable while travelling with poor connectivity: pages must be readable and editable offline, with automatic reconciliation when a network connection is restored.
 
 ### Non-goals (this PRD)
@@ -35,16 +40,18 @@ A secondary but important goal is making the **Knowledge Notebook** usable while
 │  /volume1/docker/digital_twin                      │
 │                                                    │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐ │
-│  │ cloudflared│  │ frontend │  │    backend       │ │
+│  │ cloudflared│  │ frontend │  │ public backend    │ │
 │  │  container │→ │  nginx   │→ │  FastAPI+Chroma  │ │
 │  │  (tunnel)  │  │  :80     │  │  :8000          │ │
 │  └───────────┘  └──────────┘  └────────┬────────┘ │
 │                                         │           │
 │       ┌─────────────────────────────────┘           │
 │       │  Volumes (host paths)                       │
-│       ├── ./memory         (markdown, hot-reload)   │
-│       ├── ./chroma_db      (vector index)           │
-│       ├── ./data           (knowledge.db SQLite)    │
+│       ├── ./vault-full     (git checkout, internal) │
+│       ├── ./chroma_db      (internal vector index)  │
+│       ├── ./data           (internal knowledge.db)  │
+│       ├── ./chroma_public  (public vector index)    │
+│       ├── ./data_public    (public knowledge.db)    │
 │       ├── ./logs           (ndjson request log)     │
 │       └── ./credentials.yaml                       │
 └────────────────────────────────────────────────────┘

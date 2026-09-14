@@ -28,6 +28,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from .auth import Caller, caller_dep
 from .config import get_settings, load_role_definitions, load_tokens, save_credentials
+from .family_tree import export_public_family_tree
+from .projection import publish_projection
 from .session import TIER_LIMITS, store
 
 log = logging.getLogger("ask-my-agent.admin")
@@ -73,6 +75,42 @@ def _read_log(path: Path) -> list[dict[str, Any]]:
     return out
 
 
+async def _read_admin_log_entries(settings, access_token: str = "") -> list[dict[str, Any]]:
+    """Return merged admin-visible log entries.
+
+    Internal admin reflects public traffic via either a mounted public log file
+    or an authenticated fetch to a public runtime export endpoint.
+    """
+    entries = _read_log(settings.log_path)
+
+    public_path = settings.admin_public_log_path
+    if public_path is not None and public_path.exists():
+        entries.extend(_read_log(public_path))
+        return entries
+
+    base_url = (settings.admin_public_api_base_url or "").strip().rstrip("/")
+    if not base_url and settings.app_mode == "internal":
+        base_url = "http://host.docker.internal:8080"
+    if not base_url:
+        return entries
+
+    headers: dict[str, str] = {}
+    if access_token:
+        headers["X-Access-Token"] = access_token
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(f"{base_url}/api/internal/admin-log-export", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and isinstance(data.get("entries"), list):
+                    entries.extend(data["entries"])
+    except Exception as e:
+        log.warning("admin public-log export fetch failed: %s", e)
+
+    return entries
+
+
 def _day(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d")
 
@@ -86,7 +124,7 @@ async def get_stats(
     caller: Caller = Depends(_personal),
 ) -> dict[str, Any]:
     settings = get_settings()
-    entries = _read_log(settings.log_path)
+    entries = await _read_admin_log_entries(settings, caller.token)
     chats = [e for e in entries if e.get("event") == "chat"]
 
     now = datetime.now(timezone.utc)
@@ -202,13 +240,22 @@ async def get_sync_status(
     caller: Caller = Depends(_personal),
 ) -> dict[str, Any]:
     """Return the last vault sync status."""
-    from .vault_sync import get_last_sync_info
+    from .vault_sync import get_last_sync_info, get_vault_git_status
     settings = get_settings()
     last_sync = get_last_sync_info(settings.knowledge_db_path)
     vault_path = settings.content_path
+    git_status = get_vault_git_status(vault_path)
     return {
         "vault_enabled": bool(vault_path and vault_path.exists()),
         "vault_path": str(vault_path) if vault_path else "",
+        "git_enabled": settings.vault_git_sync_enabled,
+        "git_available": git_status.get("git_available", False),
+        "git_ready": git_status.get("git_ready", False),
+        "git_branch": git_status.get("git_branch"),
+        "git_remote": git_status.get("git_remote"),
+        "git_error": git_status.get("git_error"),
+        "sync_available": bool(vault_path and vault_path.exists()),
+        "action_label": "Pull + sync" if settings.vault_git_sync_enabled else "Sync now",
         "last_sync": last_sync,
     }
 
@@ -219,14 +266,81 @@ async def trigger_sync(
     caller: Caller = Depends(_personal),
 ) -> dict[str, Any]:
     """Manually trigger a vault → DB sync."""
-    from .vault_sync import sync_vault_to_db
+    from .vault_sync import pull_vault_repo, sync_vault_to_db
     settings = get_settings()
     vault_path = settings.content_path
     if vault_path is None or not vault_path.exists():
         raise HTTPException(status_code=400, detail="Vault not configured or not found")
+
+    git_result: dict[str, Any] | None = None
+    if settings.vault_git_sync_enabled:
+        git_result = pull_vault_repo(
+            vault_path,
+            remote=settings.vault_git_remote,
+            branch=settings.vault_git_branch,
+        )
+        if not git_result.get("ok"):
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Vault git pull failed"
+                    f" ({git_result.get('reason') or git_result.get('stderr') or 'unknown error'})"
+                ),
+            )
+
     kb = request.app.state.knowledge
     retriever = getattr(request.app.state, "retriever", None)
     result = sync_vault_to_db(vault_path, kb, retriever)
+    if git_result is not None:
+        result["git"] = {
+            "attempted": git_result.get("attempted", False),
+            "changed": git_result.get("changed", False),
+            "branch": git_result.get("git_branch"),
+            "remote": git_result.get("git_remote"),
+        }
+
+    # Auto-publish public projection after every successful vault sync run,
+    # including no-change runs, to keep public artifacts fresh.
+    should_publish = settings.public_projection_enabled and result.get("status") in {"synced", "no_changes"}
+    if should_publish:
+        try:
+            counts = publish_projection(
+                source_db_path=settings.knowledge_db_path,
+                target_db_path=settings.public_projection_db_path,
+                target_chroma_path=settings.public_projection_chroma_path,
+                settings=settings,
+                allowed_roles=settings.public_projection_role_list or ["public"],
+                reindex_vectors=settings.public_projection_reindex_on_sync,
+            )
+            result["public_projection"] = {
+                "attempted": True,
+                "ok": True,
+                "nodes": counts.nodes,
+                "edges": counts.edges,
+                "indexed_nodes": counts.indexed_nodes,
+                "reindex_vectors": settings.public_projection_reindex_on_sync,
+            }
+
+            vault_path = settings.content_path
+            if vault_path is not None and vault_path.exists():
+                family_result = export_public_family_tree(
+                    vault_path,
+                    settings.public_projection_db_path.parent / "familytree",
+                )
+                result["familytree"] = family_result
+        except Exception as e:
+            log.warning("public projection publish failed after sync-trigger: %s", e)
+            result["public_projection"] = {
+                "attempted": True,
+                "ok": False,
+                "error": str(e),
+            }
+    else:
+        result["public_projection"] = {
+            "attempted": False,
+            "reason": "sync_failed_or_skipped" if settings.public_projection_enabled else "disabled",
+        }
+
     return result
 
 
@@ -241,10 +355,121 @@ async def get_logs(
     caller: Caller = Depends(_personal),
 ) -> dict[str, Any]:
     settings = get_settings()
-    entries = list(reversed(_read_log(settings.log_path)))
+    entries = list(reversed(await _read_admin_log_entries(settings, caller.token)))
     total = len(entries)
     page = entries[offset : offset + limit]
     return {"total": total, "offset": offset, "limit": limit, "entries": page}
+
+
+@router.get("/conversations")
+async def get_conversations(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    caller: Caller = Depends(_personal),
+) -> dict[str, Any]:
+    """Return conversation-level summaries (one row per session)."""
+    settings = get_settings()
+    all_entries = await _read_admin_log_entries(settings, caller.token)
+    chats = [
+        e for e in all_entries
+        if e.get("event") == "chat" and isinstance(e.get("session_id"), str)
+    ]
+
+    summaries: dict[str, dict[str, Any]] = {}
+
+    for e in chats:
+        sid = str(e.get("session_id"))
+        ts_raw = str(e.get("ts") or "")
+        try:
+            ts = datetime.fromisoformat(ts_raw)
+        except Exception:
+            ts = None
+
+        s = summaries.get(sid)
+        if s is None:
+            s = {
+                "session_id": sid,
+                "tier": e.get("tier") or "public",
+                "started_ts": ts_raw,
+                "last_ts": ts_raw,
+                "total_turns": 0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "avg_latency_ms": 0,
+                "last_user_message": "",
+                "last_response_preview": "",
+                "_started_dt": ts,
+                "_last_dt": ts,
+                "_latencies": [],
+            }
+            summaries[sid] = s
+
+        s["total_turns"] += 1
+        s["total_input_tokens"] += int(e.get("input_tokens") or 0)
+        s["total_output_tokens"] += int(e.get("output_tokens") or 0)
+
+        lat = e.get("latency_ms")
+        if isinstance(lat, int):
+            s["_latencies"].append(lat)
+
+        if ts is not None:
+            if s.get("_started_dt") is None or ts < s["_started_dt"]:
+                s["_started_dt"] = ts
+                s["started_ts"] = ts_raw
+            if s.get("_last_dt") is None or ts >= s["_last_dt"]:
+                s["_last_dt"] = ts
+                s["last_ts"] = ts_raw
+                if isinstance(e.get("user_message"), str):
+                    s["last_user_message"] = e.get("user_message") or ""
+                if isinstance(e.get("response_preview"), str):
+                    s["last_response_preview"] = e.get("response_preview") or ""
+
+    summary_list = list(summaries.values())
+    for s in summary_list:
+        latencies = s.pop("_latencies", [])
+        s["avg_latency_ms"] = int(sum(latencies) / len(latencies)) if latencies else 0
+        s.pop("_started_dt", None)
+        s.pop("_last_dt", None)
+
+    summary_list.sort(key=lambda x: x.get("last_ts") or "", reverse=True)
+    total = len(summary_list)
+    page = summary_list[offset : offset + limit]
+    return {"total": total, "offset": offset, "limit": limit, "entries": page}
+
+
+@router.get("/conversation/{session_id}")
+async def get_conversation(
+    session_id: str,
+    request: Request,
+    caller: Caller = Depends(_personal),
+) -> dict[str, Any]:
+    """Retrieve all turns for a specific conversation session."""
+    settings = get_settings()
+    all_entries = await _read_admin_log_entries(settings, caller.token)
+    
+    # Filter entries for this session_id (chat events only)
+    conversation = [
+        e for e in all_entries
+        if e.get("session_id") == session_id and e.get("event") == "chat"
+    ]
+    
+    # Sort by turn number to show in order
+    conversation.sort(key=lambda e: e.get("turn", 0))
+    
+    if not conversation:
+        return {"session_id": session_id, "turns": [], "total_turns": 0}
+    
+    # Include metadata from the first turn
+    metadata = {k: v for k, v in conversation[0].items() 
+                if k not in ["turn", "response_preview", "response_chars", "user_message", "chunks", "event"]}
+    
+    return {
+        "session_id": session_id,
+        "metadata": metadata,
+        "turns": conversation,
+        "total_turns": len(conversation),
+    }
 
 
 # ── config ────────────────────────────────────────────────────────────────────

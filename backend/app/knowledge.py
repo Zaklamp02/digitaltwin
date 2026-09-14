@@ -155,11 +155,35 @@ class KnowledgeDB:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
-        self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn = self._open_connection()
+        self._file_mtime: float = self._get_file_mtime()
         self._setup()
+
+    def _open_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        return conn
+
+    def _get_file_mtime(self) -> float:
+        try:
+            return self.db_path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def _check_external_change(self) -> None:
+        """Reopen the connection if the DB file was modified externally."""
+        current_mtime = self._get_file_mtime()
+        if current_mtime != self._file_mtime:
+            log.info("knowledge DB file changed externally (mtime %s → %s), reconnecting",
+                     self._file_mtime, current_mtime)
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = self._open_connection()
+            self._file_mtime = current_mtime
 
     # ── schema ────────────────────────────────────────────────────────────────
 
@@ -283,6 +307,7 @@ class KnowledgeDB:
         return node
 
     def get_node(self, id: str) -> KnowledgeNode | None:
+        self._check_external_change()
         with self._lock:
             row = self._conn.execute("SELECT * FROM nodes WHERE id = ?", (id,)).fetchone()
         return self._row_to_node(row) if row else None
@@ -324,6 +349,7 @@ class KnowledgeDB:
         type_filter: str | None = None,
         role_filter: list[str] | None = None,
     ) -> list[KnowledgeNode]:
+        self._check_external_change()
         with self._lock:
             if type_filter:
                 rows = self._conn.execute(
@@ -340,6 +366,7 @@ class KnowledgeDB:
         return nodes
 
     def search_nodes(self, query: str) -> list[KnowledgeNode]:
+        self._check_external_change()
         q = f"%{query}%"
         with self._lock:
             rows = self._conn.execute(
@@ -389,6 +416,7 @@ class KnowledgeDB:
         return edge
 
     def get_edge(self, id: str) -> KnowledgeEdge | None:
+        self._check_external_change()
         with self._lock:
             row = self._conn.execute("SELECT * FROM edges WHERE id = ?", (id,)).fetchone()
         return self._row_to_edge(row) if row else None
@@ -402,6 +430,7 @@ class KnowledgeDB:
         return [self._row_to_edge(r) for r in rows]
 
     def list_edges(self, node_id: str | None = None) -> list[KnowledgeEdge]:
+        self._check_external_change()
         with self._lock:
             if node_id:
                 rows = self._conn.execute(
@@ -506,6 +535,7 @@ class KnowledgeDB:
 
     def get_setting(self, key: str, default: str | None = None) -> str | None:
         """Return a value from the settings table."""
+        self._check_external_change()
         with self._lock:
             row = self._conn.execute(
                 "SELECT value FROM settings WHERE key = ?", (key,)

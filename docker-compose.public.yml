@@ -1,0 +1,86 @@
+# Public-facing Digital Twin runtime
+# 
+# NAS deployment:
+#   /volume1/docker/digital_twin_public/
+#
+# Env setup:
+#   APP_MODE=public                    (admin routes not registered)
+#   CHROMA_DIR=/app/chroma_db_public   (separate vector index)
+#   KNOWLEDGE_DB=/app/data_public/knowledge.db
+#
+# Access:
+#   ├─ Edge: sebastiaandenboer.org via Cloudflare Tunnel (TLS)
+#   ├─ Local: http://nas.local:8080   (dev/debugging only, no auth required)
+#   └─ Backend: http://backend:8000    (docker network, internal only)
+#
+# Data:
+#   ├─ Input:  /volume1/docker/digital_twin_internal/data_internal/
+#   │          (synced by publish-projection cron to data_public/)
+#   └─ Output: /volume1/docker/digital_twin_public/data_public/
+#              /volume1/docker/digital_twin_public/chroma_db_public/
+
+version: '3.8'
+
+services:
+  backend-public:
+    build:
+      context: ../shared-code
+      dockerfile: backend/Dockerfile
+    container_name: digital-twin-backend-public
+    env_file: .env
+    environment:
+      APP_MODE: "public"
+      CHROMA_DIR: /app/chroma_db_public
+      CREDENTIALS_FILE: /app/credentials.yaml
+      LOG_FILE: /app/logs/requests.ndjson
+      KNOWLEDGE_DB: /app/data_public/knowledge.db
+      VAULT_DIR: ""
+      # Widen CORS for the frontend container + production domain.
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:4173,http://frontend-public:80,https://sebastiaandenboer.org,https://www.sebastiaandenboer.org"
+    volumes:
+      - ./chroma_db_public:/app/chroma_db_public
+      - ./credentials.yaml:/app/credentials.yaml:ro
+      - ./logs:/app/logs
+      - ./data_public:/app/data_public
+      - ./frontend/public:/app/public:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      digital-twin-public-net:
+        aliases:
+          - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend-public:
+    build:
+      context: ../shared-code/frontend
+    container_name: digital-twin-frontend
+    depends_on:
+      backend-public:
+        condition: service_healthy
+    environment:
+      # Point frontend to this backend container (overrides env if needed)
+      VITE_BACKEND_URL: "http://backend-public:8000"
+    ports:
+      - "8080:80"        # Dev/debug only (normally traffic via tunnel)
+    restart: unless-stopped
+    networks:
+      digital-twin-public-net: {}
+      cf-tunnel-net: {}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  digital-twin-public-net:
+    driver: bridge
+    name: digital-twin-public-net
+  cf-tunnel-net:
+    external: true

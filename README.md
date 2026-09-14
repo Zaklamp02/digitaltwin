@@ -23,7 +23,6 @@ cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 cp ../.env.example ../.env                  # then fill in API keys
-cp ../credentials.yaml.example ../credentials.yaml   # generate tokens
 uvicorn app.main:app --reload --port 8000
 
 # 2. frontend (separate shell)
@@ -38,7 +37,6 @@ Drop a real photo at `frontend/public/avatar.png` before the QR goes live.
 
 ```bash
 cp .env.example .env                        # fill in keys
-cp credentials.yaml.example credentials.yaml
 docker compose up --build -d
 ```
 
@@ -51,14 +49,32 @@ then restart the backend or trigger a vault sync from the admin interface.
 
 ## Tokens
 
-Hand out tier-specific links by generating URL-safe tokens and adding them to
-`credentials.yaml`:
+Hand out tier-specific links by generating URL-safe tokens and storing them only
+in the gitignored `credentials.yaml` / `tokens.txt` files:
 
 ```bash
 python -c "import secrets; print('rec-' + secrets.token_urlsafe(8))"
 # → rec-kF7vQx3Jn
-# then share https://<host>/?t=rec-kF7vQx3Jn
+# then share https://<host>/#t=rec-kF7vQx3Jn
 ```
+
+The app consumes `#t=...` on first load, stores it in session storage, and
+removes it from the address bar. Legacy `?t=...` links are still accepted by the
+frontend for migration, but are scrubbed immediately after load.
+
+## Public Projection
+
+Run the internal dataset on the trusted/admin deployment, then publish a reduced
+public dataset for the internet-facing runtime:
+
+```bash
+python scripts/publish_public_projection.py \
+	--target-db data-public/knowledge.db \
+	--target-chroma chroma-public
+```
+
+Start the public runtime with `APP_MODE=public` and point `KNOWLEDGE_DB` /
+`CHROMA_DIR` at the published paths. In public mode, admin routes are not mounted.
 
 ## Tests
 

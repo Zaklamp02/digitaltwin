@@ -13,7 +13,7 @@ export interface ChatMessage {
 }
 
 export interface UseChatOptions {
-  /** token from URL `?t=...` */
+  /** Access token resolved from session storage or an imported share link. */
   token: string;
   /** Language override: "nl", "en", or null (auto). */
   language?: string | null;

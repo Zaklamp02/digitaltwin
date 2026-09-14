@@ -43,6 +43,23 @@ const inlineMdComponents = {
   hr: () => <hr className="border-ink/10 my-2" />,
 };
 
+const SESSION_TOKEN_KEY = "accessToken";
+const THEME_MODE_KEY = "themeMode";
+const LEGACY_DARK_MODE_KEY = "darkMode";
+
+type ThemeMode = "system" | "light" | "dark";
+
+function stripSensitiveTokenFromLocation(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("t");
+  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  const hashParams = new URLSearchParams(hash);
+  hashParams.delete("t");
+  const nextHash = hashParams.toString();
+  url.hash = nextHash ? `#${nextHash}` : "";
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    Types
    ══════════════════════════════════════════════════════════════════════ */
@@ -63,7 +80,14 @@ type MicroblogPost = {
 function readTokenFromUrl(): string {
   if (typeof window === "undefined") return "";
   const params = new URLSearchParams(window.location.search);
-  return params.get("t") ?? "";
+  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const hashParams = new URLSearchParams(hash);
+  const token = hashParams.get("t") ?? params.get("t") ?? sessionStorage.getItem(SESSION_TOKEN_KEY) ?? "";
+  if (token) {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    if (params.has("t") || hashParams.has("t")) stripSensitiveTokenFromLocation();
+  }
+  return token;
 }
 
 function readPageFromUrl(): string {
@@ -71,6 +95,78 @@ function readPageFromUrl(): string {
   if (window.location.pathname === "/chat") return "chat";
   const params = new URLSearchParams(window.location.search);
   return params.get("page") ?? "";
+}
+
+function getSystemPrefersDark(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function readStoredThemeMode(): ThemeMode | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = localStorage.getItem(THEME_MODE_KEY);
+    if (saved === "system" || saved === "light" || saved === "dark") return saved;
+
+    const legacy = localStorage.getItem(LEGACY_DARK_MODE_KEY);
+    if (legacy === "true") return "dark";
+    if (legacy === "false") return "light";
+  } catch {
+    // Ignore storage errors in privacy-restricted contexts.
+  }
+  return null;
+}
+
+function resolveDark(themeMode: ThemeMode, systemPrefersDark: boolean): boolean {
+  if (themeMode === "dark") return true;
+  if (themeMode === "light") return false;
+  return systemPrefersDark;
+}
+
+function applyThemeToDocument(dark: boolean): void {
+  document.documentElement.classList.toggle("dark", dark);
+  document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", dark ? "#030712" : "#fbfbf9");
+}
+
+function getNextThemeMode(themeMode: ThemeMode): ThemeMode {
+  if (themeMode === "system") return "light";
+  if (themeMode === "light") return "dark";
+  return "system";
+}
+
+function getThemeModeLabel(t: (key: string) => string, themeMode: ThemeMode): string {
+  if (themeMode === "light") return t("ui.light_mode");
+  if (themeMode === "dark") return t("ui.dark_mode");
+  return t("ui.system_mode");
+}
+
+function ThemeModeIcon({ themeMode }: { themeMode: ThemeMode }) {
+  if (themeMode === "light") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+        <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+      </svg>
+    );
+  }
+  if (themeMode === "dark") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8" />
+      <path d="M12 16v4" />
+    </svg>
+  );
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -81,17 +177,28 @@ export default function App() {
   const [token] = useState<string>(() => readTokenFromUrl());
   const [page, setPage] = useState<string>(() => readPageFromUrl());
 
-  // Dark mode
-  const [dark, setDark] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    const saved = localStorage.getItem("darkMode");
-    if (saved !== null) return saved === "true";
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readStoredThemeMode() ?? "system");
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => getSystemPrefersDark());
+  const dark = resolveDark(themeMode, systemPrefersDark);
+
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-    localStorage.setItem("darkMode", String(dark));
-  }, [dark]);
+    if (typeof window === "undefined" || !window.matchMedia || themeMode !== "system") return;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
+    setSystemPrefersDark(mediaQuery.matches);
+    mediaQuery.addEventListener("change", onChange);
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }, [themeMode]);
+
+  useEffect(() => {
+    applyThemeToDocument(dark);
+    try {
+      localStorage.setItem(THEME_MODE_KEY, themeMode);
+      localStorage.removeItem(LEGACY_DARK_MODE_KEY);
+    } catch {
+      // Ignore storage errors in privacy-restricted contexts.
+    }
+  }, [dark, themeMode]);
 
   // Language
   const [language, setLanguage] = useState<"nl" | "en" | null>(() => {
@@ -114,7 +221,7 @@ export default function App() {
         token={token}
         onExit={() => {
           setPage("");
-          window.history.replaceState({}, "", window.location.pathname + (token ? `?t=${token}` : ""));
+          window.history.replaceState({}, "", window.location.pathname);
         }}
       />
     );
@@ -125,16 +232,17 @@ export default function App() {
       <FullChat
         token={token}
         dark={dark}
-        setDark={setDark}
+        themeMode={themeMode}
+        setThemeMode={setThemeMode}
         language={language}
         setLanguage={setLanguage}
         onBack={() => {
           setPage("");
-          window.history.pushState({}, "", "/" + (token ? `?t=${token}` : ""));
+          window.history.pushState({}, "", "/");
         }}
         onAdmin={() => {
           setPage("admin");
-          window.history.pushState({}, "", `?page=admin${token ? `&t=${token}` : ""}`);
+          window.history.pushState({}, "", "?page=admin");
         }}
       />
     );
@@ -144,12 +252,13 @@ export default function App() {
     <Mindscape
       token={token}
       dark={dark}
-      setDark={setDark}
+      themeMode={themeMode}
+      setThemeMode={setThemeMode}
       language={language}
       setLanguage={setLanguage}
       onAdmin={() => {
         setPage("admin");
-        window.history.pushState({}, "", `?page=admin${token ? `&t=${token}` : ""}`);
+        window.history.pushState({}, "", "?page=admin");
       }}
     />
   );
@@ -223,14 +332,16 @@ function TuningPanel() {
 function Mindscape({
   token,
   dark,
-  setDark,
+  themeMode,
+  setThemeMode,
   language,
   setLanguage,
   onAdmin: _onAdmin,
 }: {
   token: string;
   dark: boolean;
-  setDark: (v: boolean) => void;
+  themeMode: ThemeMode;
+  setThemeMode: (v: ThemeMode) => void;
   language: "nl" | "en" | null;
   setLanguage: (v: "nl" | "en" | null) => void;
   onAdmin: () => void;
@@ -412,8 +523,10 @@ function Mindscape({
     return new URLSearchParams(window.location.search).get("tune") === "1";
   }, []);
 
+  const themeLabel = getThemeModeLabel(t, themeMode);
+
   return (
-    <div className="h-[100dvh] bg-paper dark:bg-gray-950 transition-colors duration-500 snap-y snap-proximity overflow-y-auto">
+    <div className={`h-[100dvh] ${dark ? "bg-gray-950" : "bg-paper"} transition-colors duration-500 snap-y snap-proximity overflow-y-auto`}>
       {showTuning && <TuningPanel />}
       {/* ════════════════════════════════════════════════════════════
           HERO SECTION (full viewport, stacked layout)
@@ -436,24 +549,12 @@ function Mindscape({
 
           {settingsOpen && (
             <div className="absolute top-11 right-0 w-56 rounded-xl border border-ink/[0.06] dark:border-white/10 bg-white dark:bg-gray-900 shadow-xl p-3 text-sm">
-              {/* Dark/Light toggle */}
               <button
-                onClick={() => setDark(!dark)}
+                onClick={() => setThemeMode(getNextThemeMode(themeMode))}
                 className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-ink/5 dark:hover:bg-white/5 transition-colors text-ink dark:text-white"
               >
-                <span>{dark ? t("ui.light_mode") : t("ui.dark_mode")}</span>
-                {dark ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                    <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                  </svg>
-                )}
+                <span>{t("ui.theme")}</span>
+                <span className="flex items-center gap-2 text-xs font-semibold text-ink/40 dark:text-white/40"><span>{themeLabel}</span><ThemeModeIcon themeMode={themeMode} /></span>
               </button>
 
               {/* Language toggle */}
@@ -511,22 +612,11 @@ function Mindscape({
               {settingsOpen && !heroVisible && (
                 <div className="absolute top-9 right-0 w-56 rounded-xl border border-ink/[0.06] dark:border-white/10 bg-white dark:bg-gray-900 shadow-xl p-3 text-sm z-50">
                   <button
-                    onClick={() => setDark(!dark)}
+                    onClick={() => setThemeMode(getNextThemeMode(themeMode))}
                     className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-ink/5 dark:hover:bg-white/5 transition-colors text-ink dark:text-white"
                   >
-                    <span>{dark ? t("ui.light_mode") : t("ui.dark_mode")}</span>
-                    {dark ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                        <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                      </svg>
-                    )}
+                    <span>{t("ui.theme")}</span>
+                    <span className="flex items-center gap-2 text-xs font-semibold text-ink/40 dark:text-white/40"><span>{themeLabel}</span><ThemeModeIcon themeMode={themeMode} /></span>
                   </button>
                   <button
                     onClick={() => setLanguage(language === "nl" ? "en" : "nl")}
@@ -563,7 +653,7 @@ function Mindscape({
               className={`absolute inset-x-0 top-0 z-[2] px-6 pt-12 sm:pt-16 pointer-events-none transition-all duration-700 ease-out
                 ${heroVisible ? "" : "-translate-y-[50vh] opacity-0"}`}
             >
-              <div className="pointer-events-auto">
+              <div className="pointer-events-auto max-w-[460px]">
                 <div className="flex items-center gap-4 mb-1">
                   <img
                     src="/avatar_sebastiaan.png"
@@ -826,7 +916,8 @@ function Mindscape({
 function FullChat({
   token,
   dark,
-  setDark,
+  themeMode,
+  setThemeMode,
   language,
   setLanguage,
   onBack,
@@ -834,7 +925,8 @@ function FullChat({
 }: {
   token: string;
   dark: boolean;
-  setDark: (v: boolean) => void;
+  themeMode: ThemeMode;
+  setThemeMode: (v: ThemeMode) => void;
   language: "nl" | "en" | null;
   setLanguage: (v: "nl" | "en" | null) => void;
   onBack: () => void;
@@ -887,8 +979,10 @@ function FullChat({
     return () => window.removeEventListener("popstate", onPopState);
   }, [onBack]);
 
+  const themeTitle = `${t("ui.theme")}: ${getThemeModeLabel(t, themeMode)}`;
+
   return (
-    <div className="mx-auto flex h-[100dvh] w-full max-w-[720px] flex-col bg-paper dark:bg-gray-950">
+    <div className={`mx-auto flex h-[100dvh] w-full max-w-[720px] flex-col ${dark ? "bg-gray-950" : "bg-paper"}`}>
       <header className="flex items-center gap-3 px-4 py-3 border-b border-ink/10 dark:border-white/10 bg-white dark:bg-gray-900">
         <button
           onClick={onBack}
@@ -921,23 +1015,12 @@ function FullChat({
           {language === "nl" ? "NL" : "EN"}
         </button>
         <button
-          onClick={() => setDark(!dark)}
+          onClick={() => setThemeMode(getNextThemeMode(themeMode))}
           className="h-8 w-8 rounded-full border border-ink/10 dark:border-white/10 bg-white dark:bg-white/5 flex items-center justify-center text-ink/60 dark:text-white/60 hover:text-accent dark:hover:text-accent transition-colors"
-          aria-label={dark ? t("ui.light_mode") : t("ui.dark_mode")}
-          title={dark ? t("ui.light_mode") : t("ui.dark_mode")}
+          aria-label={themeTitle}
+          title={themeTitle}
         >
-          {dark ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-              <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-            </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-          )}
+          <ThemeModeIcon themeMode={themeMode} />
         </button>
       </header>
 

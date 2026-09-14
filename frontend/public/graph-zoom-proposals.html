@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Graph Zoom Style Proposals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8f9fa;
+      color: #0f172a;
+      padding: 28px 24px 48px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .sub { font-size: 13px; color: #64748b; margin-bottom: 24px; line-height: 1.5; }
+    .controls {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 18px 18px 16px;
+      margin-bottom: 22px;
+      box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+    }
+    .preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .preset-btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1.5px solid #cbd5e1;
+      background: #f8fafc;
+      color: #334155;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+    }
+    .preset-btn:hover { background: #f1f5f9; border-color: #0F766E; color: #0F766E; }
+    .preset-btn.active { background: #0F766E; border-color: #0F766E; color: #fff; }
+    .toggle-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px 20px; }
+    .toggle-grid label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12.5px; color: #475569; cursor: pointer; user-select: none;
+    }
+    .toggle-grid input[type="checkbox"] { accent-color: #0F766E; width:14px; height:14px; flex-shrink:0; }
+    .panels { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+    .panel {
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(15,23,42,0.05);
+    }
+    .panel.live { border-color: #0F766E; box-shadow: 0 2px 14px rgba(15,118,110,0.13); }
+    .panel-header { padding: 11px 14px 9px; border-bottom: 1px solid #f1f5f9; background: #fafafa; }
+    .panel.live .panel-header { background: #f0fdf9; border-bottom-color: #ccfbf1; }
+    .panel-header h3 { font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 3px; }
+    .panel.live .panel-header h3 { color: #0F766E; }
+    .panel-header p { font-size: 11px; color: #94a3b8; line-height: 1.45; }
+    canvas { display: block; width: 100%; height: 310px; }
+    .legend { margin-top: 18px; font-size: 12px; color: #64748b; line-height: 1.7; }
+    .legend strong { color: #334155; }
+    @media (max-width: 1080px) {
+      .panels { grid-template-columns: repeat(2,1fr); }
+      .toggle-grid { grid-template-columns: repeat(2,1fr); }
+    }
+    @media (max-width: 600px) {
+      .panels { grid-template-columns: 1fr; }
+      .toggle-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>Graph Zoom Style Proposals</h1>
+<div class="sub">
+  A, B, C are fixed references — they never change. <strong>Your Mix</strong> responds to the toggles.<br>
+  Click a preset to load it into Your Mix, then tweak individual toggles to taste.
+</div>
+
+<div class="controls">
+  <div class="preset-row">
+    <button class="preset-btn" data-preset="A">Preset A · Docked + Behind</button>
+    <button class="preset-btn" data-preset="B">Preset B · Curved + Faded</button>
+    <button class="preset-btn" data-preset="C">Preset C · Label First</button>
+    <button class="preset-btn" data-preset="MIX">All on</button>
+  </div>
+  <div class="toggle-grid">
+    <label><input id="opt-dock"   type="checkbox" checked> Trim edges at boundary</label>
+    <label><input id="opt-fade"   type="checkbox">          Fade edges near center</label>
+    <label><input id="opt-behind" type="checkbox" checked> Edges behind nodes</label>
+    <label><input id="opt-curve"  type="checkbox">          Curve edges</label>
+    <label><input id="opt-halo"   type="checkbox">          Center halo separator</label>
+    <label><input id="opt-pills"  type="checkbox">          Label pill backgrounds</label>
+    <label><input id="opt-shadow" type="checkbox">          Label shadow/stroke</label>
+    <label><input id="opt-bold"   type="checkbox" checked> Bold child labels</label>
+  </div>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>A · Docked + Behind</h3>
+      <p>Edges clipped at node rims, drawn behind nodes, center halo, bold + pill labels.</p>
+    </div>
+    <canvas id="canvasA"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-header">
+      <h3>B · Curved + Faded</h3>
+      <p>Curved edges fade near center. No pills — shadow stroke handles readability.</p>
+    </div>
+    <canvas id="canvasB"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-header">
+      <h3>C · Label First</h3>
+      <p>No halo, strong pill + shadow combo, center fade. Text legibility is the priority.</p>
+    </div>
+    <canvas id="canvasC"></canvas>
+  </div>
+  <div class="panel live">
+    <div class="panel-header">
+      <h3>Your Mix ↑</h3>
+      <p>Reflects current toggles. Load a preset or flip individual options.</p>
+    </div>
+    <canvas id="canvasMix"></canvas>
+  </div>
+</div>
+
+<div class="legend">
+  <strong>How to pick:</strong> find what you like in A/B/C, replicate it in Your Mix using the toggles.
+  Tell me the combination and I'll implement it in the real graph.
+</div>
+
+<script>
+// ── Colors from MindscapeCanvas.tsx PILLAR_COLORS: Career = amber ────────────
+const [cr, cg, cb] = [245, 158, 11];
+
+const CHILDREN = [
+  { label: "Philips",       angle: 225 },
+  { label: "CV",            angle: 320 },
+  { label: "Maerlyn B.V.", angle: 135 },
+  { label: "FIOD",          angle:  40 },
+];
+
+const BG_NODES = [
+  { label: "Education", color: [167, 139, 250], ox: -0.54, oy: -0.50 },
+  { label: "Hobbies",   color: [52,  211, 153], ox: -0.54, oy:  0.44 },
+  { label: "Community", color: [56,  189, 248], ox:  0.55, oy:  0.44 },
+];
+
+const PRESETS = {
+  A:   { dock:true,  fade:false, behind:true,  curve:false, halo:true,  pills:true,  shadow:false, bold:true  },
+  B:   { dock:true,  fade:true,  behind:true,  curve:true,  halo:true,  pills:false, shadow:true,  bold:true  },
+  C:   { dock:true,  fade:true,  behind:true,  curve:false, halo:false, pills:true,  shadow:true,  bold:true  },
+  MIX: { dock:true,  fade:true,  behind:true,  curve:true,  halo:true,  pills:true,  shadow:true,  bold:true  },
+};
+
+const CTRL = {
+  dock:   document.getElementById("opt-dock"),
+  fade:   document.getElementById("opt-fade"),
+  behind: document.getElementById("opt-behind"),
+  curve:  document.getElementById("opt-curve"),
+  halo:   document.getElementById("opt-halo"),
+  pills:  document.getElementById("opt-pills"),
+  shadow: document.getElementById("opt-shadow"),
+  bold:   document.getElementById("opt-bold"),
+};
+
+function getMixState() {
+  const s = {};
+  for (const [k, el] of Object.entries(CTRL)) s[k] = el.checked;
+  return s;
+}
+
+function rrect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function draw(canvas, opts) {
+  const W = canvas.clientWidth;
+  const H = canvas.clientHeight;
+  if (!W || !H) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const pw = Math.round(W * dpr), ph = Math.round(H * dpr);
+  if (canvas.width !== pw || canvas.height !== ph) {
+    canvas.width = pw; canvas.height = ph;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#fbfbf9";
+  ctx.fillRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H / 2 + 8;
+  const nodeR = 34, childDist = 82, childR = 13;
+
+  const childPos = CHILDREN.map(c => {
+    const rad = c.angle * Math.PI / 180;
+    return { label: c.label, x: cx + Math.cos(rad) * childDist, y: cy + Math.sin(rad) * childDist };
+  });
+
+  // Background neighbour nodes
+  for (const bg of BG_NODES) {
+    const [r, g, b] = bg.color;
+    const bx = cx + bg.ox * W * 0.46, by = cy + bg.oy * H * 0.42;
+    ctx.beginPath(); ctx.arc(bx, by, 22, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.04)`; ctx.fill();
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.16)`; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = "500 10.5px Inter,-apple-system,sans-serif";
+    ctx.fillStyle = `rgba(${r},${g},${b},0.30)`;
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(bg.label, bx, by + 28); ctx.textBaseline = "alphabetic";
+  }
+
+  function drawEdges(alpha) {
+    for (const cp of childPos) {
+      let sx = cx, sy = cy, tx = cp.x, ty = cp.y;
+      const ang = Math.atan2(ty - sy, tx - sx);
+      if (opts.dock) {
+        sx = cx + Math.cos(ang) * nodeR; sy = cy + Math.sin(ang) * nodeR;
+        tx = cp.x - Math.cos(ang) * childR; ty = cp.y - Math.sin(ang) * childR;
+      }
+      ctx.beginPath();
+      if (opts.curve) {
+        const mx = (sx + tx) / 2 - (ty - sy) * 0.14;
+        const my = (sy + ty) / 2 + (tx - sx) * 0.14;
+        ctx.moveTo(sx, sy); ctx.quadraticCurveTo(mx, my, tx, ty);
+      } else {
+        ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
+      }
+      if (opts.fade) {
+        const grad = ctx.createLinearGradient(sx, sy, tx, ty);
+        grad.addColorStop(0,    `rgba(${cr},${cg},${cb},${alpha * 0.04})`);
+        grad.addColorStop(0.35, `rgba(${cr},${cg},${cb},${alpha * 0.20})`);
+        grad.addColorStop(1,    `rgba(${cr},${cg},${cb},${alpha * 0.52})`);
+        ctx.strokeStyle = grad;
+      } else {
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${alpha * 0.40})`;
+      }
+      ctx.lineWidth = 1.7; ctx.stroke();
+    }
+  }
+
+  if (opts.behind) drawEdges(1);
+
+  // Center halo
+  if (opts.halo) {
+    ctx.beginPath(); ctx.arc(cx, cy, nodeR + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(251,251,249,1)"; ctx.lineWidth = 8; ctx.stroke();
+  }
+
+  // Center node glow
+  const glowG = ctx.createRadialGradient(cx, cy, nodeR * 0.4, cx, cy, nodeR + 28);
+  glowG.addColorStop(0, `rgba(${cr},${cg},${cb},0.14)`);
+  glowG.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+  ctx.beginPath(); ctx.arc(cx, cy, nodeR + 28, 0, Math.PI * 2); ctx.fillStyle = glowG; ctx.fill();
+
+  // Center node
+  ctx.beginPath(); ctx.arc(cx, cy, nodeR, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(${cr},${cg},${cb},0.08)`; ctx.fill();
+  ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.40)`; ctx.lineWidth = 1.6; ctx.stroke();
+
+  ctx.beginPath(); ctx.arc(cx, cy, 3.2, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(${cr},${cg},${cb},0.60)`; ctx.fill();
+
+  // Center label (matches real app: 600 Inter, below node)
+  ctx.font = "600 17px Inter,-apple-system,sans-serif";
+  ctx.fillStyle = `rgba(${cr},${cg},${cb},0.78)`;
+  ctx.textAlign = "center"; ctx.fillText("Career", cx, cy + nodeR + 22);
+
+  // Child nodes + labels
+  for (const cp of childPos) {
+    ctx.beginPath(); ctx.arc(cp.x, cp.y, childR, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},0.07)`; ctx.fill();
+    ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.32)`; ctx.lineWidth = 0.9; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cp.x, cp.y, 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},0.45)`; ctx.fill();
+
+    const ang = Math.atan2(cp.y - cy, cp.x - cx);
+    const labelDist = childR + 7;
+    const lx = cp.x + Math.cos(ang) * labelDist;
+    const ly = cp.y + Math.sin(ang) * labelDist;
+    const labelBelow = Math.sin(ang) >= 0;
+
+    const fw = opts.bold ? "600" : "500";
+    ctx.font = `${fw} 11px Inter,-apple-system,sans-serif`;
+    const tw = ctx.measureText(cp.label).width;
+
+    if (opts.pills) {
+      const pw = tw + 10, ph = 15, pr = 7.5;
+      rrect(ctx, lx - pw / 2, labelBelow ? ly - 1 : ly - ph + 1, pw, ph, pr);
+      ctx.fillStyle = "rgba(251,251,249,0.92)"; ctx.fill();
+      ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.14)`; ctx.lineWidth = 0.7; ctx.stroke();
+    }
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = labelBelow ? "top" : "bottom";
+
+    if (opts.shadow) {
+      ctx.lineWidth = 3; ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(251,251,249,0.95)"; ctx.strokeText(cp.label, lx, ly);
+    }
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},${opts.bold ? 0.78 : 0.55})`;
+    ctx.fillText(cp.label, lx, ly);
+    ctx.textBaseline = "alphabetic";
+  }
+
+  if (!opts.behind) drawEdges(0.9);
+}
+
+function renderAll() {
+  draw(document.getElementById("canvasA"),   PRESETS.A);
+  draw(document.getElementById("canvasB"),   PRESETS.B);
+  draw(document.getElementById("canvasC"),   PRESETS.C);
+  draw(document.getElementById("canvasMix"), getMixState());
+}
+
+// Preset buttons only update Your Mix + set checkboxes
+document.querySelectorAll(".preset-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const preset = PRESETS[btn.dataset.preset];
+    if (!preset) return;
+    for (const [k, el] of Object.entries(CTRL)) el.checked = !!preset[k];
+    document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    draw(document.getElementById("canvasMix"), getMixState());
+  });
+});
+
+// Toggles only update Your Mix
+for (const el of Object.values(CTRL)) {
+  el.addEventListener("change", () => {
+    document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active"));
+    draw(document.getElementById("canvasMix"), getMixState());
+  });
+}
+
+function initSizes() {
+  document.querySelectorAll("canvas").forEach(c => {
+    const W = c.clientWidth, H = c.clientHeight;
+    if (!W || !H) return;
+    const dpr = window.devicePixelRatio || 1;
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+  });
+}
+
+document.fonts.ready.then(() => { initSizes(); renderAll(); });
+window.addEventListener("resize", () => { initSizes(); renderAll(); });
+</script>
+</body>
+</html>

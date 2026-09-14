@@ -28,12 +28,14 @@ from typing import Any
 import httpx
 import yaml
 
+_THIS_DIR = Path(__file__).resolve().parent
+if str(_THIS_DIR) not in sys.path:
+    sys.path.insert(0, str(_THIS_DIR))
+
+from _live_tokens import load_live_tokens, require_token_for_tier
+
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000").rstrip("/")
-TOKENS: dict[str, str | None] = {
-    "public": os.environ.get("TOKEN_PUBLIC", None),
-    "recruiter": os.environ.get("TOKEN_RECRUITER", "rec-jOuPXS64JEw"),
-    "personal": os.environ.get("TOKEN_PERSONAL", "pers-HW3xmo0IsWE"),
-}
+TOKENS = load_live_tokens()
 GOLDEN_FILE = Path(__file__).parent / "golden_qa.yaml"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
 
@@ -44,7 +46,7 @@ def _call_chat_with_context(
     question: str, tier: str, timeout: float = 60.0
 ) -> dict[str, Any]:
     """Return {response, contexts} where contexts is a list of retrieved chunk texts."""
-    token = TOKENS.get(tier)
+    token = require_token_for_tier(TOKENS, tier)
     headers: dict[str, str] = {"X-Session-Id": str(uuid.uuid4())}
     if token:
         headers["X-Access-Token"] = token

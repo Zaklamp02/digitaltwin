@@ -177,19 +177,49 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
             continue
         md_files.append(f)
 
-    # First pass: build filename → node_id mapping for wikilink resolution
-    filename_to_id: dict[str, str] = {}
+    # First pass: assign stable node IDs.
+    #
+    # Legacy behavior used only filename stem as ID, which collides when two
+    # files in different folders share the same name (e.g. TODO.md). Keep the
+    # legacy ID for unique stems and fall back to a deterministic path-based ID
+    # for duplicates.
+    filename_to_id: dict[str, str] = {}  # only unambiguous wikilinks
     file_node_ids: dict[str, str] = {}  # rel_path → node_id
+    stem_to_rels: dict[str, list[str]] = {}
+
+    for f in md_files:
+        rel = str(f.relative_to(vault_path))
+        if f.name in ("_system.md", "_config.md"):
+            continue
+        stem_to_rels.setdefault(f.stem, []).append(rel)
+
+    def _path_based_id(rel_path: str) -> str:
+        # Strip .md, replace folder separators with a stable delimiter,
+        # and normalise spaces to keep IDs URL/UI friendly.
+        base = str(Path(rel_path).with_suffix(""))
+        return base.replace("/", "--").replace(" ", "-")
 
     for f in md_files:
         rel = str(f.relative_to(vault_path))
         if f.name in ("_system.md", "_config.md"):
             continue
 
-        vault_name = vault_path.name
-        node_id = _id_from_path(rel, vault_name)
-        filename_to_id[f.stem] = node_id
+        if len(stem_to_rels.get(f.stem, [])) == 1:
+            node_id = f.stem
+            filename_to_id[f.stem] = node_id
+        else:
+            node_id = _path_based_id(rel)
+
         file_node_ids[rel] = node_id
+
+    for stem, rels in stem_to_rels.items():
+        if len(rels) > 1:
+            log.warning(
+                "Ambiguous wikilink target [[%s]]: %d notes share this name; "
+                "using path-based IDs for those notes",
+                stem,
+                len(rels),
+            )
 
     # Build document/attachment filename map (for resolving [[file.pdf]] links)
     document_files: dict[str, str] = {}  # stem-or-full-name → relative path
@@ -228,7 +258,7 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
             continue
 
         # Regular node
-        node_id = _id_from_path(rel, vault_path.name)
+        node_id = file_node_ids[rel]
         node_type = "page"  # uniform type; structure comes from folders
         # Use the actual note name for graph labels; headings are content, not identity.
         title = _title_from_stem(f.stem)
@@ -293,7 +323,8 @@ def parse_vault(vault_path: Path) -> tuple[list[VaultNode], list[VaultEdge], dic
 
     # Detect root node: the folder note at vault root (stem matches vault folder name)
     root_note = vault_path / f"{vault_path.name}.md"
-    root_id = vault_path.name if root_note.exists() else "identity"
+    root_rel = str(root_note.relative_to(vault_path)) if root_note.exists() else ""
+    root_id = file_node_ids.get(root_rel, vault_path.name if root_note.exists() else "identity")
 
     # Third pass: infer containment edges from folder hierarchy
     # Folder notes are the "index" of a folder; other files are children.

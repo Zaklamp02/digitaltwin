@@ -15,6 +15,8 @@ const EN: Record<string, string> = {
   "ui.about_arrow": "About ↓",
 
   // Settings
+  "ui.theme": "Theme",
+  "ui.system_mode": "System",
   "ui.light_mode": "Light mode",
   "ui.dark_mode": "Dark mode",
   "ui.switch_to_english": "Switch to English",

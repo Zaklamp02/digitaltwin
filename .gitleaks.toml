@@ -1,0 +1,113 @@
+# Gitleaks configuration for Digital Twin project
+# https://github.com/gitleaks/gitleaks
+
+title = "Digital Twin Repository Secrets Detection"
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = "(?i)anthropic[_-]?api[_-]?key['\"]?\s*[:=]\s*['\"]?sk-[a-z0-9_\-]{48,}"
+keywords = ["anthropic", "api", "key", "sk-"]
+severity = "HIGH"
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API key"
+regex = "(?i)openai[_-]?api[_-]?key['\"]?\s*[:=]\s*['\"]?sk-[a-z0-9_\-]{48,}"
+keywords = ["openai", "api", "key", "sk-"]
+severity = "HIGH"
+
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram bot token"
+regex = "(?i)telegram[_-]?bot[_-]?token['\"]?\s*[:=]\s*['\"]?\\d{8,10}:[a-z0-9_\-]{24,}"
+keywords = ["telegram", "bot", "token"]
+severity = "HIGH"
+
+[[rules]]
+id = "cloudflare-api-token"
+description = "Cloudflare API token"
+regex = "(?i)cloudflare[_-]?api[_-]?token['\"]?\s*[:=]\s*['\"]?[a-z0-9_\-]{40,}"
+keywords = ["cloudflare", "api", "token"]
+severity = "HIGH"
+
+[[rules]]
+id = "private-key-ssh"
+description = "SSH private key"
+regex = "-----BEGIN (RSA|DSA|EC|PGP|OPENSSH) PRIVATE KEY"
+keywords = ["private", "key", "ssh"]
+severity = "CRITICAL"
+
+[[rules]]
+id = "env-credentials"
+description = "Credentials in .env file"
+regex = "(?i)password['\"]?\s*[:=]\s*['\"]?[\\w\\-]{8,}"
+keywords = ["password", "secret", "token"]
+severity = "HIGH"
+
+[[rules]]
+id = "nas-ip-exposure"
+description = "NAS IP address (192.168.x.x)"
+regex = "192\\.168\\.\\d{1,3}\\.\\d{1,3}"
+keywords = ["192.168", "ip", "nas"]
+severity = "MEDIUM"
+
+[[rules]]
+id = "cloudflare-tunnel-id"
+description = "Cloudflare Tunnel UUID (potential credential exposure)"
+regex = "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+keywords = ["tunnel", "cloudflare", "uuid", "id"]
+severity = "MEDIUM"
+
+[[rules]]
+id = "nas-username-exposure"
+description = "NAS username and IP (e.g., Storybrew@192.168.x.x)"
+regex = "\\w+@192\\.168\\.\\d{1,3}\\.\\d{1,3}"
+keywords = ["@", "192.168", "nas", "user"]
+severity = "MEDIUM"
+
+[[rules]]
+id = "bearer-token"
+description = "Bearer token in code or config"
+regex = "Bearer\\s+[a-z0-9_\\-]{40,}"
+keywords = ["bearer", "token", "auth"]
+severity = "MEDIUM"
+
+[[rules]]
+id = "query-param-token-auth"
+description = "Token in URL query parameter (potential history leak)"
+regex = "[\\?&]t=[a-z0-9_\\-]{20,}"
+keywords = ["?t=", "&t=", "token", "query"]
+severity = "MEDIUM"
+
+# Allowlist (these patterns are safe to ignore)
+[[allowlist]]
+description = "Ignore test fixtures and example credentials"
+paths = [
+  "tests/conftest.py",
+  "tests/test_auth.py",
+  "README.md",  # May contain <YOUR_TOKEN> placeholders
+  "DEPLOY_PRD.md",
+  "NAS_DEPLOYMENT.md",
+  "NAS_DEPLOYMENT_PUBLIC.md",
+  "REPO_PUBLICATION_CHECKLIST.md",
+  ".gitleaks.toml"
+]
+
+[[allowlist]]
+description = "Ignore local development/sample configs"
+paths = [
+  "*.example",
+  "*.sample",
+  "*.template"
+]
+
+[[allowlist]]
+description = "Ignore node_modules and build artifacts"
+paths = [
+  "node_modules/",
+  "__pycache__/",
+  ".venv/",
+  "dist/",
+  "build/"
+]

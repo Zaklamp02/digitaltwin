@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # chromadb needs a small native toolchain; install then prune.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+    && apt-get install -y --no-install-recommends build-essential curl git openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,6 +16,7 @@ COPY backend/pyproject.toml ./pyproject.toml
 COPY README.md ./README.md
 COPY backend/app ./app
 COPY scripts/sync_vault.py /app/scripts/sync_vault.py
+COPY scripts/publish_public_projection.py /app/scripts/publish_public_projection.py
 
 RUN pip install --upgrade pip && pip install -e .
 

@@ -8,7 +8,7 @@ import random
 import re
 import time
 from pathlib import Path
-from typing import AsyncIterator, Literal
+from typing import Any, AsyncIterator, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -219,8 +219,9 @@ async def _sse_stream(
             "response_preview": "".join(full_text)[:200],
             **final_meta,
         }
-        # Store the user's first message so /whoasked can surface it.
-        if session.turns == 1 and user_turns:
+        # Store the latest user message for each turn so admin conversation
+        # drilldowns can show Q/A pairs across the full thread.
+        if user_turns:
             log_event["user_message"] = user_turns[-1][:200]
         write_event(settings.log_path, log_event)
     except Exception as exc:  # noqa: BLE001
@@ -318,14 +319,41 @@ def _make_question(node_type: str, title: str) -> str:
     return t.replace("{title}", title)
 
 
+def _read_log_entries(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return out
+
+
+@router.get("/api/internal/admin-log-export")
+async def admin_log_export(
+    settings: Settings = Depends(get_settings),
+    caller: Caller = Depends(caller_dep),
+) -> dict[str, Any]:
+    """Return runtime log entries for trusted cross-runtime admin aggregation."""
+    if caller.tier != "personal":
+        raise HTTPException(status_code=403, detail="forbidden")
+    return {"entries": _read_log_entries(settings.log_path)}
+
+
 @router.get("/api/suggestions")
-async def suggestions(request: Request):
+async def suggestions(request: Request, caller: Caller = Depends(caller_dep)):
     """Return 4 varied question chips drawn from knowledge nodes."""
     if not hasattr(request.app.state, "knowledge"):
         return {"suggestions": _FALLBACK}
 
     knowledge = request.app.state.knowledge
-    nodes = knowledge.list_nodes(role_filter=["public", "work"])
+    nodes = knowledge.list_nodes(role_filter=caller.roles)
 
     if not nodes:
         return {"suggestions": _FALLBACK}
@@ -335,23 +363,25 @@ async def suggestions(request: Request):
     for n in nodes:
         by_type.setdefault(n.type, []).append(n)
 
-    picked = []
+    picked_nodes = []
+    picked_questions = []
     # Prioritise variety: one per type
     type_order = ["identity", "experience", "project", "community", "opinion", "faq", "personal"]
     for t in type_order:
-        if t in by_type and len(picked) < 4:
+        if t in by_type and len(picked_questions) < 4:
             node = random.choice(by_type[t])
-            picked.append(_make_question(node.type, node.title))
+            picked_nodes.append(node)
+            picked_questions.append(_make_question(node.type, node.title))
 
     # Fill remaining slots from any remaining nodes
-    remaining = [n for n in nodes if n not in picked]
+    remaining = [n for n in nodes if n not in picked_nodes]
     random.shuffle(remaining)
     for n in remaining:
-        if len(picked) >= 4:
+        if len(picked_questions) >= 4:
             break
-        picked.append(_make_question(n.type, n.title))
+        picked_questions.append(_make_question(n.type, n.title))
 
-    return {"suggestions": picked[:4]}
+    return {"suggestions": picked_questions[:4]}
 
 
 @router.get("/api/cv")
@@ -409,8 +439,10 @@ async def public_graph(request: Request, caller: Caller = Depends(caller_dep)):
 
 @router.get("/api/content-image/{path:path}")
 async def content_image(
+    request: Request,
     path: str,
     settings: Settings = Depends(get_settings),
+    caller: Caller = Depends(caller_dep),
 ):
     """Serve an image stored under the configured content directory.
 
@@ -442,6 +474,21 @@ async def content_image(
 
     if not resolved.is_file():
         raise HTTPException(status_code=404, detail="image not found")
+
+    if not hasattr(request.app.state, "knowledge"):
+        raise HTTPException(status_code=404, detail="knowledge not available")
+
+    rel_path = str(resolved.relative_to(content_path.resolve())).replace("\\", "/")
+    knowledge = request.app.state.knowledge
+    visible_roles = set(caller.roles)
+    matching_nodes = [
+        node for node in knowledge.list_nodes(role_filter=None)
+        if isinstance(node.metadata, dict) and node.metadata.get("image_path") == rel_path
+    ]
+    if not matching_nodes:
+        raise HTTPException(status_code=404, detail="image not published")
+    if not any(visible_roles.intersection(set(node.roles)) for node in matching_nodes):
+        raise HTTPException(status_code=403, detail="forbidden")
 
     media_type = MEDIA_TYPES.get(resolved.suffix.lower(), "application/octet-stream")
     return FileResponse(

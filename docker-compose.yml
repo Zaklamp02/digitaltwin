@@ -21,6 +21,7 @@ services:
       # Widen CORS for the proxied frontend container + production domain.
       CORS_ORIGINS: "http://localhost:5173,http://localhost:4173,https://sebastiaandenboer.org,https://www.sebastiaandenboer.org"
     volumes:
+      - ./vault:/app/vault
       - ./chroma_db:/app/chroma_db
       - ./credentials.yaml:/app/credentials.yaml
       - ./logs:/app/logs

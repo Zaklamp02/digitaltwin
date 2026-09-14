@@ -14,6 +14,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings. Populated from environment variables and `.env`."""
 
+    app_mode: Literal["internal", "public"] = "internal"
+
     # LLM provider
     llm_provider: Literal["anthropic", "openai", "ollama"] = "anthropic"
     model_name: str = "claude-sonnet-4-6"
@@ -32,6 +34,7 @@ class Settings(BaseSettings):
     rag_context_turns: int = 3
     chunk_tokens: int = 300
     chunk_overlap: int = 50
+    reindex_on_startup: bool = False
 
     # Voice
     tts_model: str = "gpt-4o-mini-tts"
@@ -43,13 +46,30 @@ class Settings(BaseSettings):
     port: int = 8000
     cors_origins: str = "http://localhost:5173,http://localhost:4173"
     log_file: str = "./logs/requests.ndjson"
+    admin_public_log_file: str = ""
+    admin_public_api_base_url: str = ""
+    allow_query_token_auth: bool = False
+    require_cf_access_for_admin: bool = False
 
     # Paths
     vault_dir: str = ""  # Required source-of-truth content directory
+    vault_git_sync_enabled: bool = False
+    vault_git_pull_on_startup: bool = False
+    vault_git_poll_enabled: bool = False
+    vault_git_poll_interval_seconds: int = 300
+    vault_git_branch: str = ""
+    vault_git_remote: str = "origin"
     chroma_dir: str = "./chroma_db"
     credentials_file: str = "./credentials.yaml"
     knowledge_db: str = "./data/knowledge.db"
     documents_dir: str = "./data/documents"
+
+    # Public projection publishing (used by internal runtime)
+    public_projection_enabled: bool = True
+    public_projection_db: str = "/app/data_public_publish/knowledge.db"
+    public_projection_chroma_dir: str = "/app/chroma_db_public_publish"
+    public_projection_roles: str = "public"
+    public_projection_reindex_on_sync: bool = False
 
     # Rate limiting
     rate_limit_enabled: bool = True
@@ -91,12 +111,34 @@ class Settings(BaseSettings):
         return Path(self.log_file).resolve()
 
     @property
+    def admin_public_log_path(self) -> Path | None:
+        if not self.admin_public_log_file:
+            return None
+        return Path(self.admin_public_log_file).resolve()
+
+    @property
     def knowledge_db_path(self) -> Path:
         return Path(self.knowledge_db).resolve()
 
     @property
     def documents_path(self) -> Path:
         return Path(self.documents_dir).resolve()
+
+    @property
+    def public_projection_db_path(self) -> Path:
+        return Path(self.public_projection_db).resolve()
+
+    @property
+    def public_projection_chroma_path(self) -> Path:
+        return Path(self.public_projection_chroma_dir).resolve()
+
+    @property
+    def public_projection_role_list(self) -> list[str]:
+        return [r.strip() for r in self.public_projection_roles.split(",") if r.strip()]
+
+    @property
+    def admin_enabled(self) -> bool:
+        return self.app_mode == "internal"
 
 
 @lru_cache(maxsize=1)

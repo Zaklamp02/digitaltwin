@@ -8,7 +8,9 @@ venv/
 
 # Env & secrets
 .env
+.env.shared
 credentials.yaml
+credentials.yaml.shared
 tokens.txt
 
 # CF Tunnel credentials (never commit)
@@ -16,15 +18,21 @@ tokens.txt
 
 # Personal data — never committed
 data/
+data_internal/
+data_public/
+data_v2/
 memory_backup_*.zip
-
-# Build artefacts
-*.tsbuildinfo
 
 # Runtime data
 chroma_db/
+chroma_db_internal/
+chroma_db_public/
 logs/
+logs_internal/
 *.ndjson
+
+# Build artefacts
+*.tsbuildinfo
 
 # Node
 node_modules/
@@ -38,6 +46,9 @@ frontend/*.mjs
 # Raw input source materials (archived, content already in knowledge.db)
 raw_input_for_mempalace/
 
+# NAS deployment artifacts (local only)
+/volume1/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -45,7 +56,11 @@ Thumbs.db
 # Editor
 .idea/
 .vscode/
-
-# V2 test data
-data_v2/
+.swp
+.swo
+*~
 chroma_db_v2/
+
+# Raw personal source material (seeded into knowledge.db, never committed)
+raw_input_data/
+raw_input_data_v2/
