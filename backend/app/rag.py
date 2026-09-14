@@ -124,8 +124,11 @@ class RAGRetriever:
         query = self.contextual_query(user_turns, self.settings.rag_context_turns)
         if not query:
             return []
-        # Resolve which roles the caller has
-        roles: set[str] = set(caller_roles or [])
+        # Resolve which roles the caller has.
+        # Fail closed: a caller with no resolved roles is treated as public-only,
+        # never as unrestricted. caller_dep() always supplies at least ["public"],
+        # but access control must not depend on every call site remembering to.
+        roles: set[str] = set(caller_roles or []) or {"public"}
 
         vec = self.embedder.embed([query])[0]
         # Over-fetch so post-filtering still leaves enough results
@@ -149,8 +152,9 @@ class RAGRetriever:
                 continue
             chunk_roles_raw = (meta or {}).get("roles", "public")
             chunk_roles: set[str] = set(chunk_roles_raw.split("|")) if chunk_roles_raw else {"public"}
-            # Role check: caller must share at least one role with the chunk
-            if roles and not roles.intersection(chunk_roles):
+            # Role check: caller must share at least one role with the chunk.
+            # Unconditional — `roles` is guaranteed non-empty above.
+            if not roles.intersection(chunk_roles):
                 continue
             out.append(
                 RetrievedChunk(

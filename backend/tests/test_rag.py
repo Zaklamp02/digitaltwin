@@ -80,6 +80,29 @@ def test_role_filter_excludes_higher_roles(
     assert any(c.tier == "personal" for c in pers)
 
 
+@pytest.mark.parametrize("caller_roles", [None, []])
+def test_missing_caller_roles_fall_back_to_public_only(
+    caller_roles: list[str] | None,
+    tmp_vault_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
+    tmp_knowledge_db: KnowledgeDB,
+) -> None:
+    """A caller with no resolved roles must get public content only — never everything.
+
+    Regression guard: the filter used to be skipped entirely when the caller had
+    no roles, so an empty role list silently disabled access control.
+    """
+    settings = _make_settings(tmp_vault_dir, isolated_chroma_dir, tmp_path)
+    retriever = RAGRetriever(settings=settings, knowledge=tmp_knowledge_db, embedder=fake_embedder)
+    retriever.reindex_all()
+
+    chunks = retriever.retrieve(
+        user_turns=["first week at Youwe"], caller_roles=caller_roles
+    )
+    for c in chunks:
+        assert "public" in c.roles, f"non-public chunk leaked to role-less caller: {c.roles}"
+        assert c.tier == "public", f"non-public tier leaked to role-less caller: {c.tier}"
+
+
 def test_context_block_renders_when_chunks_present(
     tmp_vault_dir: Path, tmp_path: Path, fake_embedder, isolated_chroma_dir: Path,
     tmp_knowledge_db: KnowledgeDB,
