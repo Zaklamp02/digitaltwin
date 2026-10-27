@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.responses import RedirectResponse
 
 from . import __version__
@@ -19,6 +21,7 @@ from .audio import router as audio_router
 from .chat import router as chat_router
 from .config import get_settings
 from .family_tree import export_public_family_tree
+from .groundwork import export_public_groundwork
 from .knowledge import KnowledgeDB
 from .logging_ import configure as configure_logging
 from .projection import publish_projection
@@ -100,6 +103,12 @@ async def _run_vault_poll_loop(knowledge: KnowledgeDB, settings, retriever: RAGR
                     counts.edges,
                     counts.indexed_nodes,
                 )
+                gw_result = await asyncio.to_thread(
+                    export_public_groundwork,
+                    content_path,
+                    settings.public_projection_db_path.parent / "groundwork",
+                )
+                log.info("groundwork publish: %s (%s)", gw_result.get("status"), gw_result.get("target"))
                 family_result = await asyncio.to_thread(
                     export_public_family_tree,
                     content_path,
@@ -201,6 +210,11 @@ async def lifespan(app: FastAPI):
                         settings.public_projection_reindex_on_sync,
                     )
 
+                    gw_result = export_public_groundwork(
+                        content_path,
+                        settings.public_projection_db_path.parent / "groundwork",
+                    )
+                    log.info("groundwork publish: %s (%s)", gw_result.get("status"), gw_result.get("target"))
                     family_result = export_public_family_tree(
                         content_path,
                         settings.public_projection_db_path.parent / "familytree",
@@ -340,6 +354,15 @@ def create_app() -> FastAPI:
             "model": settings.model_name,
             "embedding_provider": settings.embedding_provider,
         }
+
+    @app.get("/api/groundwork/state", include_in_schema=False)
+    async def groundwork_state():
+        state_file = settings.knowledge_db_path.parent / "groundwork" / "state.json"
+        if not state_file.is_file():
+            raise HTTPException(status_code=404, detail="groundwork not published")
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        state["today"] = date.today().isoformat()
+        return JSONResponse(state, headers={"Cache-Control": "no-cache"})
 
     @app.get("/familytree", include_in_schema=False)
     async def familytree():

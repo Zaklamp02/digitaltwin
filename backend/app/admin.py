@@ -29,6 +29,7 @@ from sse_starlette.sse import EventSourceResponse
 from .auth import Caller, caller_dep
 from .config import get_settings, load_role_definitions, load_tokens, save_credentials
 from .family_tree import export_public_family_tree
+from .groundwork import export_public_groundwork
 from .projection import publish_projection
 from .session import TIER_LIMITS, store
 
@@ -328,6 +329,10 @@ async def trigger_sync(
                     settings.public_projection_db_path.parent / "familytree",
                 )
                 result["familytree"] = family_result
+                result["groundwork"] = export_public_groundwork(
+                    vault_path,
+                    settings.public_projection_db_path.parent / "groundwork",
+                )
         except Exception as e:
             log.warning("public projection publish failed after sync-trigger: %s", e)
             result["public_projection"] = {

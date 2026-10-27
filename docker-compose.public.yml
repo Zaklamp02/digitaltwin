@@ -66,6 +66,9 @@ services:
     environment:
       # Point frontend to this backend container (overrides env if needed)
       VITE_BACKEND_URL: "http://backend-public:8000"
+    volumes:
+      # Groundwork exercise videos + posters (rsync'd from the Mac; see GROUNDWORK.md).
+      - ../groundwork_media:/usr/share/nginx/groundwork-media:ro
     ports:
       - "8080:80"        # Dev/debug only (normally traffic via tunnel)
     restart: unless-stopped
