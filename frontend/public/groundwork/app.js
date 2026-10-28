@@ -441,12 +441,38 @@ function quoteRotator() {
 }
 
 // Home: today's main routine with Begin, the rest of today as cards, over a live sky.
+// One session: big title with Begin. Several (e.g. a run and a routine): a short heading and one
+// equal-weight card per session, so the run is as prominent as the strength work.
+function heroCard(a) {
+  const p = planOn(todayISO());
+  const label = a.kind === 'run' ? (a.icon === 'race' ? 'Race' : 'Run') : cap(a.focus);
+  const big = a.kind === 'run'
+    ? (a.done ? a.result.split(' · ')[0] : p && p.runKm ? `${p.runKm} km` : a.title)
+    : a.title;
+  const sub = a.kind === 'run'
+    ? (a.done ? `✓ Done · ${a.result.split(' · ')[1] || ''}` : (p && p.runKm ? a.title.replace(/^\s*\d+(?:[.,]\d+)?\s*km:?\s*/i, '') : '') || a.meta)
+    : a.meta;
+  return h('div', { class: `hero-act ${a.done ? 'is-done' : ''}` },
+    h('div', { class: 'hero-act-top' }, icon(a.icon, `f-${a.focus} ${a.done ? 'filled' : ''}`), h('span', { class: 'hero-act-kind' }, label)),
+    h('div', { class: 'hero-act-title' }, big),
+    h('div', { class: 'hero-act-sub' }, cap(sub || '')),
+    a.kind === 'routine'
+      ? h('a', { class: 'begin small', href: `#/play/${encodeURIComponent(a.id)}` }, h('span', { class: 'begin-icon' }), a.done ? 'Again' : 'Begin')
+      : h('span', { class: 'hero-act-foot' }, a.done ? '' : 'Logged automatically from Garmin'));
+}
+
 function todayPanel() {
   const today = todayISO();
   const acts = activitiesOn(today);
-  const routines = acts.filter((a) => a.kind === 'routine');
-  const main = routines.find((a) => !a.done) || routines[0];
   const p = planOn(today);
+  if (acts.length > 1) {
+    const words = ['', 'One', 'Two', 'Three', 'Four'];
+    return h('section', { class: 'today-panel' },
+      quoteRotator(),
+      h('h1', { class: 'display' }, p && p.race ? p.race : `${words[acts.length] || acts.length} sessions today`),
+      h('div', { class: 'hero-acts' }, acts.map(heroCard)));
+  }
+  const main = acts.find((a) => a.kind === 'routine');
   const title = p && p.race ? p.race : main ? main.title : acts.length ? (p && p.runKm ? `${p.runKm} km run` : 'Run day') : 'Rest day';
   return h('section', { class: 'today-panel' },
     quoteRotator(),

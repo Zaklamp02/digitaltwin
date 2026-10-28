@@ -574,6 +574,17 @@ body.snap { scroll-snap-type: y proximity; }
 .loc-mini select { font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--ink-2); border: 0; border-bottom: 1px dotted var(--muted); padding: 0 2px; background: transparent; cursor: pointer; }
 .loc-mini select:hover { color: var(--ink); }
 
+.hero-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 24px; }
+.hero-act { display: flex; flex-direction: column; gap: 6px; padding: 20px 22px 22px; border-radius: 16px; background: color-mix(in srgb, var(--paper) 86%, transparent); backdrop-filter: blur(8px); }
+.hero-act-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.hero-act-top .ico { width: 40px; height: 40px; }
+.hero-act-kind { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.hero-act-title { font-family: var(--serif); font-size: 32px; line-height: 1.1; }
+.hero-act-sub { color: var(--ink-2); font-size: 15px; min-height: 22px; }
+.hero-act .begin.small { align-self: flex-start; margin-top: 14px; }
+.hero-act-foot { margin-top: auto; padding-top: 14px; font-size: 12.5px; color: var(--muted); }
+.hero-act.is-done .hero-act-title { color: var(--accent); }
+
 /* finish */
 .log { margin-top: 8px; }
 .log-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--hair); font-size: 14.5px; }
