@@ -11,8 +11,10 @@ const readLocal = () => { try { return JSON.parse(localStorage.getItem(LOCAL_KEY
 async function refreshState() {
   // Local server (read-write) answers api/state next to the app; the public site serves a read-only
   // export at /api/groundwork/state.
+  // (The public site's nginx answers unknown paths with its HTML page, so check it really is JSON.)
+  const isJSON = (res) => res.ok && (res.headers.get('content-type') || '').includes('json');
   let r = await fetch(window.GROUNDWORK_STATE_URL || 'api/state', { cache: 'no-store' });
-  if (!r.ok && !window.GROUNDWORK_STATE_URL) r = await fetch('/api/groundwork/state', { cache: 'no-store' });
+  if (!isJSON(r) && !window.GROUNDWORK_STATE_URL) r = await fetch('/api/groundwork/state', { cache: 'no-store' });
   S = await r.json();
   S.settings = S.settings || {};
   if (S.readonly) Object.assign(S.settings, readLocal());
