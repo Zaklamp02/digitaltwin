@@ -21,22 +21,30 @@ Per-device choices on the site (location, voice, beeps) are kept in the browser'
 
 ## Deploy
 
-1. **Code** to the NAS, as usual (see `NAS_DEPLOYMENT_INTERNAL.md`): rsync this repo to
-   `/volume1/docker/shared-code/`.
-2. **Media**, once (and again when videos are added):
+App changes (anything in `frontend/public/groundwork/`):
 
-   ```bash
-   rsync -av ~/Practice/library/ Storybrew@192.168.68.200:/volume1/docker/groundwork_media/
-   ```
+```bash
+scripts/groundwork_deploy.sh
+```
 
-3. **Rebuild** both runtimes (needs sudo on the NAS):
+It stamps a fresh `?v=` on the script tags, copies the app to the NAS, and prints the rebuild
+command for `frontend-public` (needs your sudo password on the NAS). The stamp matters: Cloudflare and
+browsers cache `.js` for 4 hours, while `index.html` is never cached, so new tags load the new files
+immediately.
 
-   ```bash
-   ssh -t Storybrew@192.168.68.200 'cd /volume1/docker/digital_twin_internal && sudo docker compose up -d --build && cd ../digital_twin_public && sudo docker compose up -d --build'
-   ```
+Backend changes (`backend/app/groundwork.py`): copy the repo to `/volume1/docker/shared-code/` (see
+`NAS_DEPLOY_INTERNAL.md`) and rebuild both runtimes with
+`sudo COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1 docker-compose up -d --build` (the NAS has
+docker-compose 1.28). The NAS rsync service is off, so copies go over SSH with tar.
 
-4. The next vault poll (≤5 min) writes `state.json`; or trigger a sync from the admin page.
-   Check `https://sebastiaandenboer.org/groundwork/`.
+Media (once, and when videos are added):
+
+```bash
+cd ~/Practice/library && tar -cf - . | ssh Storybrew@192.168.68.200 'tar -xf - -C /volume1/docker/groundwork_media'
+```
+
+Plan, routines and logs need no deploy: they live in the vault and reach the site after the next
+vault sync (≤10 min).
 
 ## Local development
 
