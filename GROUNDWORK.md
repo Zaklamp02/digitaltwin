@@ -33,7 +33,7 @@ browsers cache `.js` for 4 hours, while `index.html` is never cached, so new tag
 immediately.
 
 Backend changes (`backend/app/groundwork.py`): copy the repo to `/volume1/docker/shared-code/` (see
-`NAS_DEPLOY_INTERNAL.md`) and rebuild both runtimes with
+`NAS_DEPLOYMENT_INTERNAL.md`) and rebuild both runtimes with
 `sudo COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1 docker-compose up -d --build` (the NAS has
 docker-compose 1.28). The NAS rsync service is off, so copies go over SSH with tar.
 
